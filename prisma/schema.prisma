@@ -1,0 +1,166 @@
+// Fengjie Orders — database schema
+// Works with Supabase PostgreSQL or any PostgreSQL instance via DATABASE_URL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  SUBMITTED
+  REVIEWED
+  ERROR_NEEDS_CORRECTION
+  PROCESSING
+  READY_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum AdminErrorType {
+  MISSING_PICKUP_CODE
+  PRODUCT_MISMATCH
+  QUANTITY_MISMATCH
+  INVALID_ADDRESS
+  DUPLICATE_ORDER
+  UNKNOWN_PRODUCT
+}
+
+model Admin {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  name         String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  notes        AdminNote[]
+
+  @@map("admins")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String?
+  description String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  incomingOrderProducts IncomingOrderProduct[]
+  recipientProducts     RecipientProduct[]
+
+  @@index([category, sortOrder])
+  @@map("products")
+}
+
+model OrderRequest {
+  id             String      @id @default(cuid())
+  requestId      String      @unique @map("request_id")
+  lookupToken    String      @unique @map("lookup_token")
+  formFillerName String      @map("form_filler_name")
+  status         OrderStatus @default(SUBMITTED)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  incomingOrders IncomingOrder[]
+  recipients     Recipient[]
+  statusHistory  OrderStatusHistory[]
+  adminNotes     AdminNote[]
+  adminErrors    OrderAdminError[]
+
+  @@map("order_requests")
+}
+
+model IncomingOrder {
+  id             String @id @default(cuid())
+  orderRequestId String @map("order_request_id")
+  orderNumber    String @map("order_number")
+  pickupCode     String @map("pickup_code")
+  sortOrder      Int    @default(0) @map("sort_order")
+
+  orderRequest OrderRequest           @relation(fields: [orderRequestId], references: [id], onDelete: Cascade)
+  products     IncomingOrderProduct[]
+
+  @@map("incoming_orders")
+}
+
+model IncomingOrderProduct {
+  id              String @id @default(cuid())
+  incomingOrderId String @map("incoming_order_id")
+  productId       String @map("product_id")
+  quantity        Int
+
+  incomingOrder IncomingOrder @relation(fields: [incomingOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@map("incoming_order_products")
+}
+
+model Recipient {
+  id             String  @id @default(cuid())
+  orderRequestId String  @map("order_request_id")
+  name           String
+  phone          String
+  address        String
+  notes          String?
+  sortOrder      Int     @default(0) @map("sort_order")
+
+  orderRequest OrderRequest       @relation(fields: [orderRequestId], references: [id], onDelete: Cascade)
+  products     RecipientProduct[]
+
+  @@map("recipients")
+}
+
+model RecipientProduct {
+  id          String @id @default(cuid())
+  recipientId String @map("recipient_id")
+  productId   String @map("product_id")
+  quantity    Int
+
+  recipient Recipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@map("recipient_products")
+}
+
+model OrderStatusHistory {
+  id             String      @id @default(cuid())
+  orderRequestId String      @map("order_request_id")
+  status         OrderStatus
+  changedBy      String?     @map("changed_by")
+  note           String?
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  orderRequest OrderRequest @relation(fields: [orderRequestId], references: [id], onDelete: Cascade)
+
+  @@map("order_status_history")
+}
+
+model AdminNote {
+  id             String   @id @default(cuid())
+  orderRequestId String   @map("order_request_id")
+  adminId        String?  @map("admin_id")
+  content        String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  orderRequest OrderRequest @relation(fields: [orderRequestId], references: [id], onDelete: Cascade)
+  admin        Admin?       @relation(fields: [adminId], references: [id])
+
+  @@map("admin_notes")
+}
+
+model OrderAdminError {
+  id             String         @id @default(cuid())
+  orderRequestId String         @map("order_request_id")
+  errorType      AdminErrorType @map("error_type")
+  details        String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  orderRequest OrderRequest @relation(fields: [orderRequestId], references: [id], onDelete: Cascade)
+
+  @@map("order_admin_errors")
+}

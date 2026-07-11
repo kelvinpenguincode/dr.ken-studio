@@ -1,36 +1,184 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+    # Dr. Ken Studio Orders
 
-## Getting Started
+A full-stack order request website built with Next.js, Tailwind CSS, React Hook Form, Zod, Prisma, and PostgreSQL (Supabase-compatible).
 
-First, run the development server:
+Customers can submit package/order requests, search and lightly edit submitted orders, and admins can review requests, update statuses, flag issues, and export CSV data.
+
+## Features
+
+- Public order request form styled like the reference design (beige background, gold accents, card layout)
+- Collapsible order search on the home page
+- Order confirmation page with request ID warning
+- Search/modify page with editable recipient fields before processing starts
+- Protected admin dashboard with login, filters, detail view, status updates, issue flags, and CSV export
+- Prisma schema + Supabase SQL schema + seed data for products and admin user
+
+## Tech Stack
+
+- **Next.js 16** (App Router, TypeScript)
+- **Tailwind CSS 4**
+- **React Hook Form + Zod**
+- **Prisma** for database access
+- **PostgreSQL** via Supabase or any Postgres host
+- **Supabase client** stubbed for future auth/storage/Google Sheets integration
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Copy the example file and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Required for local development:
+
+```env
+DATABASE_URL="postgresql://postgres:password@localhost:5432/fengjie_orders"
+ADMIN_SESSION_SECRET="replace-with-a-long-random-string"
+ADMIN_EMAIL="admin@fengjie.local"
+ADMIN_PASSWORD="admin123"
+```
+
+### 3. Set up the database
+
+**Option A — Supabase (recommended)**
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Copy the Postgres connection string into `DATABASE_URL`
+3. Optionally run `supabase/schema.sql` in the SQL editor
+4. Or use Prisma:
+
+```bash
+npm run db:push
+npm run db:seed
+```
+
+**Option B — Local PostgreSQL**
+
+```bash
+createdb fengjie_orders
+npm run db:setup
+```
+
+### 4. Run the app
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Admin dashboard: [http://localhost:3000/admin/login](http://localhost:3000/admin/login)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Default seeded admin (change in production):
 
-## Learn More
+- Email: `admin@fengjie.local`
+- Password: `admin123`
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── page.tsx                     # Public order form
+│   ├── confirmation/[requestId]/  # Submission confirmation
+│   ├── search/                      # Search & modify orders
+│   ├── admin/                       # Admin dashboard & order detail
+│   └── api/                         # REST API routes
+├── components/
+│   ├── forms/                       # Order form sections
+│   ├── orders/                      # Order display & search UI
+│   ├── admin/                       # Admin UI
+│   └── ui/                          # Shared UI primitives
+├── lib/
+│   ├── services/orders.ts           # Database business logic
+│   ├── validations/order.ts         # Zod schemas
+│   └── auth.ts                      # Admin session helpers
+prisma/
+├── schema.prisma                    # Prisma schema
+└── seed.ts                          # Product + admin seed data
+supabase/
+└── schema.sql                       # Raw SQL schema for Supabase
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Pages
 
-## Deploy on Vercel
+| Route | Description |
+|-------|-------------|
+| `/` | Submit a new order + collapsible search |
+| `/confirmation/[requestId]` | Post-submission summary |
+| `/search?q=` | Find and edit an existing order |
+| `/admin/login` | Admin sign-in |
+| `/admin` | Order list with filters + CSV export |
+| `/admin/orders/[requestId]` | Admin order detail & status tools |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Order Statuses
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Submitted
+- Reviewed
+- Error / Needs Correction
+- Processing
+- Ready for Delivery
+- Completed
+- Cancelled
+
+Customers can edit recipient info, notes, and product quantities only while status is **Submitted**, **Reviewed**, or **Error / Needs Correction**.
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/products` | Active product list |
+| POST | `/api/orders` | Create order request |
+| GET | `/api/orders/search?q=` | Search orders |
+| GET/PATCH | `/api/orders/[requestId]` | View/update customer order |
+| POST/DELETE | `/api/admin/login` | Admin login/logout |
+| GET | `/api/admin/orders` | Admin order list |
+| GET/PATCH | `/api/admin/orders/[requestId]` | Admin order detail/update |
+| GET | `/api/admin/orders/export` | CSV export |
+
+## Database Tables
+
+- `admins`
+- `products`
+- `order_requests`
+- `incoming_orders`
+- `incoming_order_products`
+- `recipients`
+- `recipient_products`
+- `order_status_history`
+- `admin_notes`
+- `order_admin_errors`
+
+## Google Sheets (future)
+
+`src/lib/supabase.ts` includes a `googleSheetsConfig` helper with env placeholders. Wire a server action or cron job later using:
+
+- `GOOGLE_SHEETS_CLIENT_EMAIL`
+- `GOOGLE_SHEETS_PRIVATE_KEY`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+
+## Production Notes
+
+- Change the seeded admin password immediately
+- Use a strong `ADMIN_SESSION_SECRET`
+- Enable SSL for your Postgres connection
+- Consider moving admin auth to Supabase Auth for MFA and team management
+
+## Scripts
+
+```bash
+npm run dev          # Start dev server
+npm run build        # Generate Prisma client + production build
+npm run db:push      # Push schema to database
+npm run db:seed      # Seed products and admin user
+npm run db:setup     # Push schema + seed
+```
