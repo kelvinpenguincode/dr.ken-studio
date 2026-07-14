@@ -67,9 +67,11 @@ export async function POST() {
         : firstFailure?.reason === "TopicDisallowed" ||
             firstFailure?.reason === "DeviceTokenNotForTopic"
           ? `Bundle ID mismatch: APNS_BUNDLE_ID is “${result.bundleId}” but must match the app’s Bundle Identifier in Xcode exactly.`
-          : firstFailure
-            ? `APNs rejected the send: ${firstFailure.reason}`
-            : "No device tokens registered yet.",
+          : firstFailure?.reason === "InvalidProviderToken"
+            ? "InvalidProviderToken: APNS_KEY_ID, APNS_TEAM_ID, or APNS_PRIVATE_KEY is wrong. Key ID + Team ID are each 10 characters; paste the full .p8 including BEGIN/END lines; Key ID must belong to that .p8 file."
+            : firstFailure
+              ? `APNs rejected the send: ${firstFailure.reason}`
+              : "No device tokens registered yet.",
     });
   } catch (err) {
     console.error("Test push failed", err);

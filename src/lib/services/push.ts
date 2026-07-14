@@ -34,15 +34,64 @@ function useProductionApns(): boolean {
 
 let cachedJwt: { token: string; exp: number } | null = null;
 
+/** Normalize a .p8 key pasted into Vercel (quoted, \\n, spaces, etc.). */
+function normalizeApnsPrivateKey(raw: string): string {
+  let key = raw.trim();
+
+  // Strip wrapping quotes from env UIs
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+
+  // Handle escaped newlines from dashboards
+  key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+
+  // If someone pasted the key as one long line without breaks, rebuild PEM
+  if (!key.includes("\n") && key.includes("-----BEGIN PRIVATE KEY-----")) {
+    key = key
+      .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+      .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----");
+    const match = key.match(
+      /-----BEGIN PRIVATE KEY-----\n?([\s\S]*?)\n?-----END PRIVATE KEY-----/,
+    );
+    if (match) {
+      const body = match[1].replace(/\s+/g, "");
+      const lines = body.match(/.{1,64}/g)?.join("\n") ?? body;
+      key = `-----BEGIN PRIVATE KEY-----\n${lines}\n-----END PRIVATE KEY-----`;
+    }
+  }
+
+  if (
+    !key.includes("-----BEGIN PRIVATE KEY-----") ||
+    !key.includes("-----END PRIVATE KEY-----")
+  ) {
+    throw new Error(
+      "APNS_PRIVATE_KEY must include -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----",
+    );
+  }
+
+  return key;
+}
+
 function getApnsJwt(): string {
   const now = Math.floor(Date.now() / 1000);
   if (cachedJwt && cachedJwt.exp > now + 60) {
     return cachedJwt.token;
   }
 
-  const keyId = process.env.APNS_KEY_ID!;
-  const teamId = process.env.APNS_TEAM_ID!;
-  const privateKeyPem = process.env.APNS_PRIVATE_KEY!.replace(/\\n/g, "\n");
+  const keyId = process.env.APNS_KEY_ID!.trim();
+  const teamId = process.env.APNS_TEAM_ID!.trim();
+  const privateKeyPem = normalizeApnsPrivateKey(process.env.APNS_PRIVATE_KEY!);
+
+  if (keyId.length !== 10) {
+    console.warn("[push] APNS_KEY_ID should be 10 characters, got", keyId.length);
+  }
+  if (teamId.length !== 10) {
+    console.warn("[push] APNS_TEAM_ID should be 10 characters, got", teamId.length);
+  }
 
   const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: keyId })).toString(
     "base64url",
