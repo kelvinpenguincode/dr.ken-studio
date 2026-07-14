@@ -32,15 +32,6 @@ struct OrderWizardView: View {
         .navigationTitle("New order")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Order submitted", isPresented: $showSuccess) {
-            Button("Notify me of updates") {
-                if let id = submittedId {
-                    Task {
-                        let ok = await PushNotificationManager.shared.watchOrder(id)
-                        appState.showToast(ok ? "Notifications on for \(id)" : "Could not enable notifications")
-                    }
-                }
-                dismiss()
-            }
             Button("Done") { dismiss() }
             if let id = submittedId {
                 ShareLink(item: "Dr. Ken Studio request ID: \(id)") {
@@ -48,7 +39,7 @@ struct OrderWizardView: View {
                 }
             }
         } message: {
-            Text("Save your request ID: \(submittedId ?? ""). Turn on notifications to get status updates.")
+            Text("Save your request ID: \(submittedId ?? ""). Notifications will alert you when the status changes (if enabled).")
         }
         .onChange(of: appState.orderDraft) { _, _ in
             appState.saveDraft()
@@ -294,6 +285,11 @@ struct OrderWizardView: View {
             submittedId = result.requestId
             appState.clearDraft()
             Haptics.success()
+            // Register this order for push so status changes reach the phone
+            let ok = await PushNotificationManager.shared.watchOrder(result.requestId)
+            if ok {
+                appState.showToast("Notifications on for \(result.requestId)")
+            }
             showSuccess = true
         } catch {
             errorMessage = error.localizedDescription

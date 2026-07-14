@@ -470,9 +470,17 @@ export async function updateOrderAsAdmin(
 
   if (previous.status !== payload.status) {
     const { notifyOrderStatusChange } = await import("@/lib/services/push");
-    void notifyOrderStatusChange(order.requestId, order.status, order.userId).catch(
-      (error) => console.error("[push] status notify failed", error),
-    );
+    // Await so Vercel serverless does not freeze before APNs finishes
+    try {
+      const result = await notifyOrderStatusChange(
+        order.requestId,
+        order.status,
+        order.userId,
+      );
+      console.info("[push] status notify result", result);
+    } catch (error) {
+      console.error("[push] status notify failed", error);
+    }
   }
 
   return order;

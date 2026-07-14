@@ -46,6 +46,13 @@ export function AdminTeamPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [pushStatus, setPushStatus] = useState<{
+    configured: boolean;
+    production: boolean;
+    tokenCount: number;
+    hint: string;
+    bundleId: string | null;
+  } | null>(null);
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -62,10 +69,16 @@ export function AdminTeamPanel({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/admin/admins");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load admins");
+      const [adminsRes, pushRes] = await Promise.all([
+        fetch("/api/admin/admins"),
+        fetch("/api/admin/push-status"),
+      ]);
+      const data = await adminsRes.json();
+      if (!adminsRes.ok) throw new Error(data.error || "Failed to load admins");
       setAdmins(data.admins);
+      if (pushRes.ok) {
+        setPushStatus(await pushRes.json());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load admins");
     } finally {
@@ -205,6 +218,19 @@ export function AdminTeamPanel({
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
           {message}
         </div>
+      ) : null}
+
+      {pushStatus ? (
+        <Card className="space-y-2 p-5">
+          <h2 className="text-lg font-semibold text-foreground">Push notifications</h2>
+          <p className="text-sm text-muted">{pushStatus.hint}</p>
+          <p className="text-xs text-muted">
+            Configured: {pushStatus.configured ? "yes" : "no"} · Gateway:{" "}
+            {pushStatus.production ? "production" : "sandbox"} · Devices:{" "}
+            {pushStatus.tokenCount}
+            {pushStatus.bundleId ? ` · Bundle: ${pushStatus.bundleId}` : ""}
+          </p>
+        </Card>
       ) : null}
 
       <Card className="space-y-4 p-5">

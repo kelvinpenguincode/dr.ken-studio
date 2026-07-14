@@ -149,8 +149,9 @@ APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----"
 APNS_PRODUCTION="false"
 ```
 
-Use `APNS_PRODUCTION="true"` for TestFlight / App Store builds.  
-Keep `"false"` for local/simulator debug builds using the sandbox APNs gateway.
+Use `APNS_PRODUCTION="true"` for TestFlight / App Store builds (required).  
+On Vercel production, production APNs is used automatically if this var is unset.  
+Use `"false"` only for local Xcode debug builds (sandbox APNs).
 
 > **Note:** Simulators often cannot receive real APNs. Test on a physical iPhone.
 

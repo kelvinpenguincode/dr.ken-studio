@@ -51,7 +51,7 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("You’ll get alerts when an admin changes an order status (Processing, Ready, Completed, etc.).")
+                Text("You’ll get alerts when an admin changes an order status (Processing, Ready, Completed, etc.). TestFlight requires APNS_PRODUCTION=true on the server. Simulators usually cannot receive pushes.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

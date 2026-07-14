@@ -12,6 +12,7 @@ const registerSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const hasRequestId = Object.prototype.hasOwnProperty.call(body, "requestId");
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid push token" }, { status: 400 });
@@ -22,7 +23,9 @@ export async function POST(request: Request) {
       token: parsed.data.token,
       platform: parsed.data.platform ?? "ios",
       userId: session?.userId ?? null,
-      watchRequestId: parsed.data.requestId?.trim() || null,
+      watchRequestId: hasRequestId
+        ? String(body.requestId ?? "").trim() || null
+        : undefined,
     });
 
     return NextResponse.json({

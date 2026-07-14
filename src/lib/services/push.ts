@@ -18,6 +18,14 @@ function isApnsConfigured(): boolean {
   );
 }
 
+/** TestFlight / App Store need production APNs. Debug builds use sandbox. */
+function useProductionApns(): boolean {
+  if (process.env.APNS_PRODUCTION === "true") return true;
+  if (process.env.APNS_PRODUCTION === "false") return false;
+  // Default: production on Vercel production deploys
+  return process.env.VERCEL_ENV === "production";
+}
+
 let cachedJwt: { token: string; exp: number } | null = null;
 
 function getApnsJwt(): string {
@@ -58,7 +66,7 @@ async function sendApns(deviceToken: string, payload: PushPayload): Promise<bool
   }
 
   const bundleId = process.env.APNS_BUNDLE_ID!;
-  const useSandbox = process.env.APNS_PRODUCTION !== "true";
+  const useSandbox = !useProductionApns();
   const host = useSandbox
     ? "https://api.sandbox.push.apple.com"
     : "https://api.push.apple.com";
@@ -111,6 +119,7 @@ export async function registerPushToken(input: {
   token: string;
   platform?: string;
   userId?: string | null;
+  /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
   const token = input.token.trim();
@@ -122,8 +131,10 @@ export async function registerPushToken(input: {
     where: { token },
     update: {
       platform: input.platform ?? "ios",
-      userId: input.userId ?? undefined,
-      watchRequestId: input.watchRequestId ?? undefined,
+      ...(input.userId !== undefined ? { userId: input.userId } : {}),
+      ...(input.watchRequestId !== undefined
+        ? { watchRequestId: input.watchRequestId }
+        : {}),
     },
     create: {
       token,
@@ -162,8 +173,26 @@ export async function notifyOrderStatusChange(
   });
 
   if (tokens.length === 0) {
+    console.info(
+      "[push] no device tokens for",
+      requestId,
+      "userId=",
+      userId ?? "none",
+      "configured=",
+      isApnsConfigured(),
+    );
     return { sent: 0, configured: isApnsConfigured() };
   }
+
+  console.info(
+    "[push] sending to",
+    tokens.length,
+    "device(s)",
+    "production=",
+    useProductionApns(),
+    "requestId=",
+    requestId,
+  );
 
   let sent = 0;
   for (const row of tokens) {
@@ -177,7 +206,10 @@ export async function notifyOrderStatusChange(
 export function getPushConfigStatus() {
   return {
     configured: isApnsConfigured(),
-    production: process.env.APNS_PRODUCTION === "true",
+    production: useProductionApns(),
     bundleId: process.env.APNS_BUNDLE_ID ?? null,
+    keyIdConfigured: Boolean(process.env.APNS_KEY_ID),
+    teamIdConfigured: Boolean(process.env.APNS_TEAM_ID),
+    privateKeyConfigured: Boolean(process.env.APNS_PRIVATE_KEY),
   };
 }
