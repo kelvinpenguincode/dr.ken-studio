@@ -190,12 +190,22 @@ function parseApnsReason(body: string, status: number): string {
   }
 }
 
+function shouldRetryOppositeApnsEnvironment(reason?: string): boolean {
+  // Apple often returns BadDeviceToken (not only BadEnvironmentKeyInToken)
+  // when a sandbox token is sent to production or the reverse.
+  return (
+    reason === "BadEnvironmentKeyInToken" ||
+    reason === "BadDeviceToken"
+  );
+}
+
 async function sendApnsOnce(
   deviceToken: string,
   payloadBody: string,
   production: boolean,
+  options?: { deleteOnHardFail?: boolean },
 ): Promise<ApnsSendResult> {
-  const bundleId = process.env.APNS_BUNDLE_ID!;
+  const bundleId = process.env.APNS_BUNDLE_ID!.trim();
   const authority = apnsAuthority(production);
   const jwt = getApnsJwt();
 
@@ -213,7 +223,9 @@ async function sendApnsOnce(
   );
 
   if (response.status === 410) {
-    await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+    if (options?.deleteOnHardFail !== false) {
+      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+    }
     return { ok: false, status: 410, reason: "Gone" };
   }
 
@@ -227,8 +239,13 @@ async function sendApnsOnce(
       bundleId,
       "host=",
       authority,
+      "tokenLen=",
+      deviceToken.length,
     );
-    if (reason === "BadDeviceToken" || reason === "Unregistered") {
+    if (
+      options?.deleteOnHardFail !== false &&
+      (reason === "Unregistered" || reason === "Gone")
+    ) {
       await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
     }
     return { ok: false, status: response.status, reason };
@@ -259,21 +276,44 @@ async function sendApns(
   });
 
   // Prefer the configured gateway, but sandbox vs production device tokens differ.
-  // TestFlight = production; Xcode debug = sandbox. Retry the other if mismatched.
+  // TestFlight = production; Xcode debug = sandbox.
+  // Retry opposite gateway for env mismatches (Apple often uses BadDeviceToken).
   const preferredProduction = useProductionApns();
 
   try {
-    const first = await sendApnsOnce(deviceToken, body, preferredProduction);
-    if (first.ok || first.reason !== "BadEnvironmentKeyInToken") {
+    const first = await sendApnsOnce(deviceToken, body, preferredProduction, {
+      deleteOnHardFail: false,
+    });
+    if (first.ok || !shouldRetryOppositeApnsEnvironment(first.reason)) {
+      if (
+        !first.ok &&
+        (first.reason === "BadDeviceToken" ||
+          first.reason === "Unregistered" ||
+          first.reason === "Gone")
+      ) {
+        await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+      }
       return first;
     }
 
     console.warn(
-      "[push] BadEnvironmentKeyInToken on",
+      "[push]",
+      first.reason,
+      "on",
       preferredProduction ? "production" : "sandbox",
       "— retrying opposite gateway",
     );
-    return await sendApnsOnce(deviceToken, body, !preferredProduction);
+    const second = await sendApnsOnce(deviceToken, body, !preferredProduction, {
+      deleteOnHardFail: false,
+    });
+    if (!second.ok) {
+      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+      return {
+        ...second,
+        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"}`,
+      };
+    }
+    return second;
   } catch (error) {
     console.error("[push] APNs request failed", error);
     const message = error instanceof Error ? error.message : "request failed";
@@ -398,17 +438,22 @@ export async function sendTestPushToAllDevices() {
     title: "Test notification",
     body: "Dr. Ken Studio push is working.",
   };
-  const results: Array<ApnsSendResult & { tokenPrefix: string }> = [];
+  const results: Array<ApnsSendResult & { tokenPrefix: string; tokenLen: number }> =
+    [];
   let sent = 0;
   for (const row of tokens) {
     const result = await sendApns(row.token, payload);
-    results.push({ ...result, tokenPrefix: row.token.slice(0, 12) });
+    results.push({
+      ...result,
+      tokenPrefix: row.token.slice(0, 12),
+      tokenLen: row.token.length,
+    });
     if (result.ok) sent += 1;
   }
   return {
     sent,
     attempted: tokens.length,
-    bundleId: process.env.APNS_BUNDLE_ID ?? null,
+    bundleId: process.env.APNS_BUNDLE_ID?.trim() ?? null,
     production: useProductionApns(),
     results,
   };

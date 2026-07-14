@@ -46,6 +46,7 @@
 		A20000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A20000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000013 /* DrKenStudio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DrKenStudio.entitlements; sourceTree = "<group>"; };
+		A20000000000000000000015 /* DrKenStudioDebug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DrKenStudioDebug.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000014 /* DrKenStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DrKenStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -79,6 +80,7 @@
 				A40000000000000000000009 /* Resources */,
 				A20000000000000000000012 /* Info.plist */,
 				A20000000000000000000013 /* DrKenStudio.entitlements */,
+				A20000000000000000000015 /* DrKenStudioDebug.entitlements */,
 			);
 			path = DrKenStudio;
 			sourceTree = "<group>";
@@ -314,9 +316,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = DrKenStudio/DrKenStudio.entitlements;
+				CODE_SIGN_ENTITLEMENTS = DrKenStudio/DrKenStudioDebug.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DrKenStudio/Info.plist;
@@ -345,7 +347,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = DrKenStudio/DrKenStudio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DrKenStudio/Info.plist;
