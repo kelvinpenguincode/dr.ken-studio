@@ -15,19 +15,12 @@ final class PushNotificationManager: NSObject, ObservableObject {
 
     private var api: APIClient?
     private var pendingRequestId: String?
-    /// When forcing a refresh, ignore cached token until Apple delivers a new callback.
-    private var awaitingFreshToken = false
-    private var tokenSeenAtRequest: String?
 
     private override init() {
         super.init()
         if let saved = UserDefaults.standard.string(forKey: "apnsDeviceToken") {
             deviceToken = saved
         }
-    }
-
-    var appBundleId: String {
-        Bundle.main.bundleIdentifier ?? "(unknown)"
     }
 
     func configure(api: APIClient) {
@@ -43,11 +36,8 @@ final class PushNotificationManager: NSObject, ObservableObject {
         }
     }
 
-    /// Ask for permission, get a (preferably fresh) Apple device token, then register with our API.
-    func requestPermissionAndRegister(
-        watchRequestId: String? = nil,
-        forceNewToken: Bool = true
-    ) async -> Bool {
+    /// Ask for permission, wait for Apple's device token, then register with our API.
+    func requestPermissionAndRegister(watchRequestId: String? = nil) async -> Bool {
         pendingRequestId = watchRequestId
         lastError = nil
         lastSyncMessage = "Asking for permission…"
@@ -61,18 +51,12 @@ final class PushNotificationManager: NSObject, ObservableObject {
                 return false
             }
 
-            lastSyncMessage = forceNewToken
-                ? "Requesting fresh Apple device token…"
-                : "Waiting for Apple device token…"
-            let token = try await waitForDeviceToken(
-                timeoutSeconds: 20,
-                forceNewToken: forceNewToken
-            )
+            lastSyncMessage = "Waiting for Apple device token…"
+            let token = try await waitForDeviceToken(timeoutSeconds: 15)
             lastSyncMessage = "Saving token to server…"
             try await syncToken(token, watchRequestId: watchRequestId)
             pendingRequestId = nil
-            lastSyncMessage =
-                "Registered with server · \(token.prefix(10))… (\(token.count) chars) · app \(appBundleId)"
+            lastSyncMessage = "Registered with server · \(token.prefix(10))…"
             return true
         } catch {
             lastError = error.localizedDescription
@@ -85,17 +69,13 @@ final class PushNotificationManager: NSObject, ObservableObject {
         let token = deviceTokenData.map { String(format: "%02.2hhx", $0) }.joined()
         deviceToken = token
         UserDefaults.standard.set(token, forKey: "apnsDeviceToken")
-        awaitingFreshToken = false
 
+        // Background refresh if token arrives outside an explicit enable flow
         Task {
             do {
                 try await syncToken(token, watchRequestId: pendingRequestId)
-                if lastSyncMessage == nil
-                    || lastSyncMessage?.contains("Waiting") == true
-                    || lastSyncMessage?.contains("Requesting fresh") == true
-                {
-                    lastSyncMessage =
-                        "Registered with server · \(token.prefix(10))… (\(token.count) chars)"
+                if lastSyncMessage == nil || lastSyncMessage?.contains("Waiting") == true {
+                    lastSyncMessage = "Registered with server · \(token.prefix(10))…"
                 }
                 pendingRequestId = nil
             } catch {
@@ -105,7 +85,6 @@ final class PushNotificationManager: NSObject, ObservableObject {
     }
 
     func handleRegistrationFailure(_ error: Error) {
-        awaitingFreshToken = false
         lastError = error.localizedDescription
         lastSyncMessage = error.localizedDescription
     }
@@ -114,7 +93,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
     func syncAfterLogin() async {
         do {
             if deviceToken == nil {
-                _ = await requestPermissionAndRegister(forceNewToken: true)
+                _ = await requestPermissionAndRegister()
                 return
             }
             guard let token = deviceToken else { return }
@@ -127,63 +106,32 @@ final class PushNotificationManager: NSObject, ObservableObject {
     }
 
     func watchOrder(_ requestId: String) async -> Bool {
-        await requestPermissionAndRegister(watchRequestId: requestId, forceNewToken: false)
-    }
-
-    func clearLocalTokenCache() {
-        deviceToken = nil
-        UserDefaults.standard.removeObject(forKey: "apnsDeviceToken")
-        lastSyncMessage = "Cleared local Apple token cache"
+        await requestPermissionAndRegister(watchRequestId: requestId)
     }
 
     func unregister() async {
         guard let token = deviceToken, let api else { return }
         try? await api.unregisterPushToken(token)
-        clearLocalTokenCache()
         UIApplication.shared.unregisterForRemoteNotifications()
     }
 
-    private func waitForDeviceToken(timeoutSeconds: Double, forceNewToken: Bool) async throws -> String {
-        tokenSeenAtRequest = deviceToken
+    private func waitForDeviceToken(timeoutSeconds: Double) async throws -> String {
+        UIApplication.shared.registerForRemoteNotifications()
 
-        if forceNewToken {
-            // Drop cached value so we don't keep re-uploading a rejected BadDeviceToken.
-            awaitingFreshToken = true
-            UIApplication.shared.unregisterForRemoteNotifications()
-            try await Task.sleep(nanoseconds: 400_000_000)
-            UIApplication.shared.registerForRemoteNotifications()
-        } else {
-            UIApplication.shared.registerForRemoteNotifications()
-            if let existing = deviceToken, !existing.isEmpty {
-                return existing
-            }
+        if let existing = deviceToken, !existing.isEmpty {
+            return existing
         }
 
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if let token = deviceToken, !token.isEmpty {
-                if forceNewToken {
-                    // Accept callback even if Apple returns the same token string —
-                    // but only after we observed a registration callback (awaitingFreshToken cleared).
-                    if !awaitingFreshToken {
-                        return token
-                    }
-                } else {
-                    return token
-                }
+                return token
             }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
 
-        // Fallback: if Apple didn't fire a new callback, use whatever we have
-        // (often the same token — that's OK once server gateway/bundle are correct).
-        if let token = deviceToken, !token.isEmpty {
-            awaitingFreshToken = false
-            return token
-        }
-
         throw APIError.network(
-            "Apple did not return a push token. Use a physical iPhone (not Simulator), and confirm Push Notifications is enabled in Xcode → Signing & Capabilities. App bundle: \(appBundleId)"
+            "Apple did not return a push token. Use a physical iPhone (not Simulator), and confirm Push Notifications is enabled for the app in Xcode → Signing & Capabilities."
         )
     }
 
@@ -225,6 +173,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    // Foreground presentation
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -233,6 +182,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound, .badge])
     }
 
+    // Tap notification
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
