@@ -293,9 +293,10 @@ export async function registerPushToken(input: {
   /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
-  const token = input.token.trim();
-  if (!token) {
-    throw new Error("Push token is required");
+  // APNs tokens are hex; strip junk so we never save a mangled value
+  const token = input.token.trim().toLowerCase().replace(/[^0-9a-f]/g, "");
+  if (token.length < 64) {
+    throw new Error("Push token looks invalid (too short)");
   }
 
   return prisma.devicePushToken.upsert({
@@ -317,9 +318,17 @@ export async function registerPushToken(input: {
 }
 
 export async function unregisterPushToken(token: string) {
+  const normalized = token.trim().toLowerCase().replace(/[^0-9a-f]/g, "");
   await prisma.devicePushToken.deleteMany({
-    where: { token: token.trim() },
+    where: {
+      OR: [{ token: token.trim() }, ...(normalized ? [{ token: normalized }] : [])],
+    },
   });
+}
+
+export async function clearAllDevicePushTokens() {
+  const result = await prisma.devicePushToken.deleteMany();
+  return { deleted: result.count };
 }
 
 export async function notifyOrderStatusChange(

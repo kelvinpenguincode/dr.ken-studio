@@ -285,6 +285,47 @@ export function AdminTeamPanel({
           >
             {pushBusy ? "Sending..." : "Send test push"}
           </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={pushBusy || pushStatus.tokenCount === 0}
+            onClick={() => {
+              void (async () => {
+                if (
+                  !window.confirm(
+                    "Clear all saved push device tokens? Phones must Enable & sync again afterwards.",
+                  )
+                ) {
+                  return;
+                }
+                setPushBusy(true);
+                setError("");
+                setMessage("");
+                try {
+                  const res = await fetch("/api/admin/push-status", {
+                    method: "DELETE",
+                  });
+                  const data = await readResponseJson<{
+                    hint?: string;
+                    error?: string;
+                  }>(res);
+                  if (!res.ok) {
+                    throw new Error(
+                      errorFromResponse(data, "Clear failed", res.status),
+                    );
+                  }
+                  setMessage(data?.hint ?? "Cleared device tokens");
+                  await load();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Clear failed");
+                } finally {
+                  setPushBusy(false);
+                }
+              })();
+            }}
+          >
+            Clear device tokens
+          </Button>
         </Card>
       ) : null}
 
