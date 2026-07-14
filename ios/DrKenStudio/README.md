@@ -32,6 +32,34 @@ Looks similar (cream + gold accents) but is **much easier to use on iPhone** wit
 
 ---
 
+## Fix: folder names like `App 15-38-54-126`
+
+Those timestamp suffixes are usually **iCloud / Finder conflict copies**. Xcode expects `App`, `Models`, etc.
+
+In Finder, open the source folder next to `drkenstudio.xcodeproj` (or `DrKenStudio.xcodeproj`) and rename:
+
+| On disk (wrong) | Rename to |
+|-----------------|-----------|
+| `App 15-38-54-126` | `App` |
+| `Models 15-38-54-128` | `Models` |
+| `Resources 15-38-54-127` | `Resources` |
+| `Services 15-38-54-128` | `Services` |
+| `Theme 15-38-54-128` | `Theme` |
+| `Views 15-38-54-127` | `Views` |
+
+If both `App` and `App 15-38-54-…` exist, keep the one with your latest Swift files and delete the empty/old duplicate. Then in Xcode: **Product → Clean Build Folder**, quit Xcode, delete DerivedData for this app, reopen, Archive again.
+
+Prefer a clean `git clone` of `ios/DrKenStudio` over copying via iCloud when possible.
+
+### Fix: Multiple commands produce `Info.plist`
+
+In the target → **Build Settings**: set **Generate Info.plist File** = **No**, and **Info.plist File** = `DrKenStudio/Info.plist` (or your real relative path).  
+Also remove `Info.plist` from **Copy Bundle Resources** if it appears there.
+
+If you use XcodeGen: `cd ios/DrKenStudio && xcodegen generate` (updated `project.yml` already avoids the double Info.plist).
+
+---
+
 ## Open in Xcode (recommended — 5 minutes)
 
 ### Option A — Create a new Xcode project and drop files in
