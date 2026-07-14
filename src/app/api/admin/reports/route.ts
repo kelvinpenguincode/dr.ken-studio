@@ -1,14 +1,12 @@
-import { getAdminSessionFromCookies } from "@/lib/admin-session";
+import { requireAdminPermission } from "@/lib/admin-session";
 import { generateSalesReport } from "@/lib/services/orders";
 import { formatCny, formatUsd } from "@/lib/pricing";
 import type { OrderStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
-  const session = await getAdminSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { error } = await requireAdminPermission("reports.view");
+  if (error) return error;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -58,8 +56,8 @@ export async function GET(request: Request) {
       totalUsdFormatted: formatUsd(report.totalUsd),
       totalCnyFormatted: formatCny(report.totalCny),
     });
-  } catch (error) {
-    console.error("Report generation failed", error);
+  } catch (err) {
+    console.error("Report generation failed", err);
     return NextResponse.json({ error: "Failed to generate report" }, { status: 500 });
   }
 }

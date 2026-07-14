@@ -1,13 +1,11 @@
-import { getAdminSessionFromCookies } from "@/lib/admin-session";
+import { requireAdminPermission } from "@/lib/admin-session";
 import { exportOrdersToCsv } from "@/lib/services/orders";
 import type { OrderStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
-  const session = await getAdminSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { error } = await requireAdminPermission("orders.export");
+  if (error) return error;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -23,8 +21,8 @@ export async function GET(request: Request) {
         "Content-Disposition": `attachment; filename="dr-ken-studio-orders-${Date.now()}.csv"`,
       },
     });
-  } catch (error) {
-    console.error("CSV export failed", error);
+  } catch (err) {
+    console.error("CSV export failed", err);
     return NextResponse.json({ error: "Export failed" }, { status: 500 });
   }
 }

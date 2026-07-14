@@ -8,10 +8,18 @@ export function AdminHeader({
   email,
   title = "Orders",
   subtitle,
+  canManageAdmins = false,
+  canExport = false,
+  showOrdersLink = false,
+  exportQuery,
 }: {
   email: string;
   title?: string;
   subtitle?: string;
+  canManageAdmins?: boolean;
+  canExport?: boolean;
+  showOrdersLink?: boolean;
+  exportQuery?: string;
 }) {
   const router = useRouter();
 
@@ -34,6 +42,30 @@ export function AdminHeader({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {showOrdersLink ? (
+            <Link
+              href="/admin"
+              className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-border bg-cream/40 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-cream-dark"
+            >
+              Orders
+            </Link>
+          ) : null}
+          {canManageAdmins ? (
+            <Link
+              href="/admin/team"
+              className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-border bg-cream/40 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-cream-dark"
+            >
+              Team
+            </Link>
+          ) : null}
+          {canExport ? (
+            <a
+              href={`/api/admin/orders/export${exportQuery ? `?${exportQuery}` : ""}`}
+              className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-border bg-cream/40 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-cream-dark"
+            >
+              Export CSV
+            </a>
+          ) : null}
           <Link
             href="/"
             className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-border bg-cream/40 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-cream-dark"

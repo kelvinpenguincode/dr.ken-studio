@@ -26,6 +26,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
+    if (!admin.active) {
+      return NextResponse.json(
+        { error: "This admin account is deactivated" },
+        { status: 403 },
+      );
+    }
+
     const valid = await bcrypt.compare(parsed.data.password, admin.passwordHash);
     if (!valid) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
@@ -43,6 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       email: admin.email,
       name: admin.name,
+      role: admin.role,
     });
   } catch (error) {
     console.error("Admin login failed", error);

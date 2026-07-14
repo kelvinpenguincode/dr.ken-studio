@@ -29,11 +29,22 @@ enum AdminErrorType {
   UNKNOWN_PRODUCT
 }
 
+enum AdminRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
 model Admin {
   id           String      @id @default(cuid())
   email        String      @unique
   passwordHash String      @map("password_hash")
   name         String?
+  /// OWNER keeps full access for existing installs; new invites set role explicitly.
+  role         AdminRole   @default(OWNER)
+  /// Empty = use role defaults. Otherwise these permissions are used as-is.
+  permissions  String[]    @default([])
+  active       Boolean     @default(true)
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
   notes        AdminNote[]

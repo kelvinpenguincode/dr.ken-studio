@@ -1,6 +1,7 @@
 import { AdminOrderDetail } from "@/components/admin/AdminOrderDetail";
 import { AdminHeader } from "@/components/admin/AdminHeader";
-import { getAdminSessionFromCookies } from "@/lib/admin-session";
+import { hasPermission } from "@/lib/admin-permissions";
+import { getAdminActor } from "@/lib/admin-session";
 import { getOrderByRequestId } from "@/lib/services/orders";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -12,9 +13,12 @@ type AdminOrderPageProps = {
 };
 
 export default async function AdminOrderPage({ params }: AdminOrderPageProps) {
-  const session = await getAdminSessionFromCookies();
-  if (!session) {
+  const actor = await getAdminActor();
+  if (!actor) {
     redirect("/admin/login");
+  }
+  if (!hasPermission(actor.permissions, "orders.view")) {
+    redirect("/admin");
   }
 
   const { requestId } = await params;
@@ -35,9 +39,11 @@ export default async function AdminOrderPage({ params }: AdminOrderPageProps) {
             ← Back to dashboard
           </Link>
           <AdminHeader
-            email={session.email}
+            email={actor.email}
             title="Order detail"
             subtitle={`Manage status, issues, and notes for ${order.requestId}`}
+            canManageAdmins={hasPermission(actor.permissions, "admins.manage")}
+            showOrdersLink
           />
         </div>
         <AdminOrderDetail order={order} />

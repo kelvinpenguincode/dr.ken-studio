@@ -10,9 +10,10 @@ import { useState } from "react";
 
 type AdminFiltersProps = {
   products: ProductOption[];
+  canExport?: boolean;
 };
 
-export function AdminFilters({ products }: AdminFiltersProps) {
+export function AdminFilters({ products, canExport = true }: AdminFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [q, setQ] = useState(searchParams.get("q") ?? "");
@@ -96,9 +97,11 @@ export function AdminFilters({ products }: AdminFiltersProps) {
           <Button type="submit" className="flex-1">
             Apply
           </Button>
-          <Button type="button" variant="secondary" onClick={exportCsv}>
-            Export CSV
-          </Button>
+          {canExport ? (
+            <Button type="button" variant="secondary" onClick={exportCsv}>
+              Export CSV
+            </Button>
+          ) : null}
         </div>
       </div>
     </form>

@@ -89,11 +89,13 @@ async function main() {
   console.log("Seeding admin user...");
   await prisma.admin.upsert({
     where: { email: adminEmail },
-    update: { passwordHash, name: "Site Admin" },
+    update: { passwordHash, name: "Site Admin", role: "OWNER", active: true },
     create: {
       email: adminEmail,
       passwordHash,
       name: "Site Admin",
+      role: "OWNER",
+      active: true,
     },
   });
 

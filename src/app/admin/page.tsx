@@ -3,7 +3,8 @@ import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminOrdersTable } from "@/components/admin/AdminOrdersTable";
 import { AdminReportsPanel } from "@/components/admin/AdminReportsPanel";
 import { AdminStats } from "@/components/admin/AdminStats";
-import { getAdminSessionFromCookies } from "@/lib/admin-session";
+import { hasPermission } from "@/lib/admin-permissions";
+import { getAdminActor } from "@/lib/admin-session";
 import {
   getActiveProducts,
   getAdminOrderStats,
@@ -24,8 +25,11 @@ type AdminPageProps = {
 };
 
 export default async function AdminDashboardPage({ searchParams }: AdminPageProps) {
-  const session = await getAdminSessionFromCookies();
-  if (!session) {
+  const actor = await getAdminActor();
+  if (!actor) {
+    redirect("/admin/login");
+  }
+  if (!hasPermission(actor.permissions, "orders.view")) {
     redirect("/admin/login");
   }
 
@@ -36,13 +40,18 @@ export default async function AdminDashboardPage({ searchParams }: AdminPageProp
     getAdminOrderStats(),
   ]);
 
+  const canManageAdmins = hasPermission(actor.permissions, "admins.manage");
+  const canExport = hasPermission(actor.permissions, "orders.export");
+  const canViewReports = hasPermission(actor.permissions, "reports.view");
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f1e8_0%,#f4efe6_40%,#efe7db_100%)] px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl space-y-6">
         <AdminHeader
-          email={session.email}
+          email={actor.email}
           title="Order dashboard"
-          subtitle={`Review submissions, update status, and export CSV · ${session.email}`}
+          subtitle={`${ROLE_SUBTITLE(actor.role)} · ${actor.email}`}
+          canManageAdmins={canManageAdmins}
         />
 
         <AdminStats
@@ -52,13 +61,19 @@ export default async function AdminDashboardPage({ searchParams }: AdminPageProp
         />
 
         <Suspense fallback={<div className="text-sm text-muted">Loading filters...</div>}>
-          <AdminFilters products={products} />
+          <AdminFilters products={products} canExport={canExport} />
         </Suspense>
 
-        <AdminReportsPanel />
+        {canViewReports ? <AdminReportsPanel /> : null}
 
         <AdminOrdersTable orders={orders} />
       </div>
     </div>
   );
+}
+
+function ROLE_SUBTITLE(role: string) {
+  if (role === "OWNER") return "Owner access";
+  if (role === "MANAGER") return "Manager access";
+  return "Staff access";
 }

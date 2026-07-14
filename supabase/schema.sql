@@ -20,11 +20,20 @@ CREATE TYPE admin_error_type AS ENUM (
   'UNKNOWN_PRODUCT'
 );
 
+CREATE TYPE admin_role AS ENUM (
+  'OWNER',
+  'MANAGER',
+  'STAFF'
+);
+
 CREATE TABLE admins (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   name TEXT,
+  role admin_role NOT NULL DEFAULT 'OWNER',
+  permissions TEXT[] NOT NULL DEFAULT '{}',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

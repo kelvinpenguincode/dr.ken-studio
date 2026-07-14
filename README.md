@@ -118,6 +118,7 @@ supabase/
 | `/search?q=` | Find and edit an existing order |
 | `/admin/login` | Admin sign-in |
 | `/admin` | Order list with filters + CSV export |
+| `/admin/team` | Manage admins, roles, and permissions |
 | `/admin/orders/[requestId]` | Admin order detail & status tools |
 
 ## Order Statuses
@@ -141,9 +142,12 @@ Customers can edit recipient info, notes, and product quantities only while stat
 | GET | `/api/orders/search?q=` | Search orders |
 | GET/PATCH | `/api/orders/[requestId]` | View/update customer order |
 | POST/DELETE | `/api/admin/login` | Admin login/logout |
+| GET | `/api/admin/me` | Current admin profile + permissions |
+| GET/POST/PATCH/DELETE | `/api/admin/admins` | Manage admin accounts |
 | GET | `/api/admin/orders` | Admin order list |
 | GET/PATCH | `/api/admin/orders/[requestId]` | Admin order detail/update |
 | GET | `/api/admin/orders/export` | CSV export |
+| GET | `/api/admin/reports` | Sales report |
 
 ## Database Tables
 
@@ -171,7 +175,7 @@ Customers can edit recipient info, notes, and product quantities only while stat
 - Change the seeded admin password immediately
 - Use a strong `ADMIN_SESSION_SECRET`
 - Enable SSL for your Postgres connection
-- Consider moving admin auth to Supabase Auth for MFA and team management
+- Invite extra admins from `/admin/team` (Owner / Manager / Staff + custom permissions)
 
 ## Scripts
 

@@ -77,6 +77,28 @@ export const adminLoginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const adminCreateSchema = z.object({
+  email: z.string().email("Enter a valid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  name: z.string().max(120).optional(),
+  role: z.enum(["OWNER", "MANAGER", "STAFF"]),
+  permissions: z.array(z.string()).optional(),
+  useCustomPermissions: z.boolean().optional(),
+});
+
+export const adminUpdateSchema = z.object({
+  name: z.string().max(120).optional().nullable(),
+  role: z.enum(["OWNER", "MANAGER", "STAFF"]).optional(),
+  permissions: z.array(z.string()).optional(),
+  useCustomPermissions: z.boolean().optional(),
+  active: z.boolean().optional(),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .optional()
+    .or(z.literal("")),
+});
+
 export const userSignupSchema = z.object({
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
