@@ -114,8 +114,8 @@ function getApnsJwt(): string {
   return token;
 }
 
-function apnsAuthority(): string {
-  return useProductionApns()
+function apnsAuthority(production: boolean): string {
+  return production
     ? "https://api.push.apple.com"
     : "https://api.sandbox.push.apple.com";
 }
@@ -181,6 +181,62 @@ function http2Request(
   });
 }
 
+function parseApnsReason(body: string, status: number): string {
+  if (!body) return `HTTP ${status}`;
+  try {
+    return (JSON.parse(body) as { reason?: string }).reason ?? body;
+  } catch {
+    return body;
+  }
+}
+
+async function sendApnsOnce(
+  deviceToken: string,
+  payloadBody: string,
+  production: boolean,
+): Promise<ApnsSendResult> {
+  const bundleId = process.env.APNS_BUNDLE_ID!;
+  const authority = apnsAuthority(production);
+  const jwt = getApnsJwt();
+
+  const response = await http2Request(
+    authority,
+    `/3/device/${deviceToken}`,
+    {
+      authorization: `bearer ${jwt}`,
+      "apns-topic": bundleId,
+      "apns-push-type": "alert",
+      "apns-priority": "10",
+      "content-type": "application/json",
+    },
+    payloadBody,
+  );
+
+  if (response.status === 410) {
+    await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+    return { ok: false, status: 410, reason: "Gone" };
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    const reason = parseApnsReason(response.body, response.status);
+    console.error(
+      "[push] APNs error",
+      response.status,
+      reason,
+      "topic=",
+      bundleId,
+      "host=",
+      authority,
+    );
+    if (reason === "BadDeviceToken" || reason === "Unregistered") {
+      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+    }
+    return { ok: false, status: response.status, reason };
+  }
+
+  return { ok: true, status: response.status };
+}
+
 async function sendApns(
   deviceToken: string,
   payload: PushPayload,
@@ -189,9 +245,6 @@ async function sendApns(
     console.warn("[push] APNs env vars not configured — skipping send");
     return { ok: false, reason: "not_configured" };
   }
-
-  const bundleId = process.env.APNS_BUNDLE_ID!;
-  const authority = apnsAuthority();
 
   const body = JSON.stringify({
     aps: {
@@ -205,50 +258,22 @@ async function sendApns(
     requestId: payload.requestId,
   });
 
+  // Prefer the configured gateway, but sandbox vs production device tokens differ.
+  // TestFlight = production; Xcode debug = sandbox. Retry the other if mismatched.
+  const preferredProduction = useProductionApns();
+
   try {
-    const jwt = getApnsJwt();
-    const response = await http2Request(
-      authority,
-      `/3/device/${deviceToken}`,
-      {
-        authorization: `bearer ${jwt}`,
-        "apns-topic": bundleId,
-        "apns-push-type": "alert",
-        "apns-priority": "10",
-        "content-type": "application/json",
-      },
-      body,
+    const first = await sendApnsOnce(deviceToken, body, preferredProduction);
+    if (first.ok || first.reason !== "BadEnvironmentKeyInToken") {
+      return first;
+    }
+
+    console.warn(
+      "[push] BadEnvironmentKeyInToken on",
+      preferredProduction ? "production" : "sandbox",
+      "— retrying opposite gateway",
     );
-
-    if (response.status === 410) {
-      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-      return { ok: false, status: 410, reason: "Gone" };
-    }
-
-    if (response.status < 200 || response.status >= 300) {
-      console.error(
-        "[push] APNs error",
-        response.status,
-        response.body,
-        "topic=",
-        bundleId,
-        "host=",
-        authority,
-      );
-      let reason = response.body || `HTTP ${response.status}`;
-      try {
-        reason =
-          (JSON.parse(response.body) as { reason?: string }).reason ?? reason;
-      } catch {
-        /* keep text */
-      }
-      if (reason === "BadDeviceToken" || reason === "Unregistered") {
-        await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-      }
-      return { ok: false, status: response.status, reason };
-    }
-
-    return { ok: true, status: response.status };
+    return await sendApnsOnce(deviceToken, body, !preferredProduction);
   } catch (error) {
     console.error("[push] APNs request failed", error);
     const message = error instanceof Error ? error.message : "request failed";
