@@ -5,16 +5,44 @@ import { orderDetailInclude, type OrderDetail } from "@/types/order";
 import type { AdminErrorType, OrderStatus, Prisma } from "@prisma/client";
 
 export async function getActiveProducts() {
-  const products = await prisma.product.findMany({
-    where: { active: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, category: true, description: true, priceUsd: true },
-  });
+  try {
+    const products = await prisma.product.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        description: true,
+        priceUsd: true,
+      },
+    });
 
-  return products.map((product) => ({
-    ...product,
-    priceUsd: Number(product.priceUsd),
-  }));
+    return products.map((product) => ({
+      ...product,
+      priceUsd: Number(product.priceUsd),
+    }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Older DBs may be missing price_usd / sort_order until prisma db push
+    if (
+      message.includes("P2022") ||
+      message.includes("price_usd") ||
+      message.includes("sort_order") ||
+      message.toLowerCase().includes("does not exist")
+    ) {
+      const products = await prisma.product.findMany({
+        where: { active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, category: true, description: true },
+      });
+      return products.map((product) => ({
+        ...product,
+        priceUsd: 0,
+      }));
+    }
+    throw error;
+  }
 }
 
 export async function getAdminOrderStats() {

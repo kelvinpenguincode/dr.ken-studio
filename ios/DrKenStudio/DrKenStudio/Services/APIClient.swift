@@ -172,7 +172,13 @@ final class APIClient {
         if !(200...299).contains(http.statusCode) {
             var message: String?
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                message = json["error"] as? String
+                let error = json["error"] as? String
+                let hint = json["hint"] as? String
+                let detail = json["detail"] as? String
+                message = [error, hint, detail]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " — ")
             }
             if message == nil, let text = String(data: data, encoding: .utf8), !text.isEmpty {
                 // HTML or plain text from Vercel / Next (often a missing route)
