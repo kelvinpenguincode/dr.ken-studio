@@ -32,10 +32,12 @@ struct SettingsView: View {
 
             Section("Notifications") {
                 LabeledContent("Permission", value: pushStatusLabel)
+                LabeledContent("App bundle", value: pushManager.appBundleId)
                 if let token = pushManager.deviceToken {
-                    Text("Apple token: \(token.prefix(12))…")
+                    Text("Apple token: \(token.prefix(12))… (\(token.count) hex chars)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 } else {
                     Text("Apple token: not received yet")
                         .font(.caption2)
@@ -43,12 +45,17 @@ struct SettingsView: View {
                 }
                 Button("Enable & sync order alerts") {
                     Task {
-                        let ok = await pushManager.requestPermissionAndRegister()
+                        let ok = await pushManager.requestPermissionAndRegister(forceNewToken: true)
                         pushMessage = ok
                             ? (pushManager.lastSyncMessage ?? "Registered with server")
                             : (pushManager.lastSyncMessage ?? pushManager.lastError ?? "Failed")
                         Haptics.light()
                     }
+                }
+                Button("Clear local token cache") {
+                    pushManager.clearLocalTokenCache()
+                    pushMessage = "Local cache cleared — tap Enable & sync next"
+                    Haptics.light()
                 }
                 if let pushMessage {
                     Text(pushMessage)
@@ -59,7 +66,7 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("Permission On alone is not enough — the app must show an Apple token and “Registered with server”. Then refresh Admin → Team; Devices should be 1+.")
+                Text("App bundle above must exactly match Vercel APNS_BUNDLE_ID. BadDeviceToken usually means mistyped Bundle ID — not that Apple “won’t rotate” the token (it often stays the same).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
