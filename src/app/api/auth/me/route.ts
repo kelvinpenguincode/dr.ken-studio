@@ -4,24 +4,29 @@ import { userProfileSchema } from "@/lib/validations/order";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const session = await getUserSessionFromCookies();
-  if (!session) {
+  try {
+    const session = await getUserSessionFromCookies();
+    if (!session) {
+      return NextResponse.json({ user: null });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phone: true,
+        address: true,
+        createdAt: true,
+      },
+    });
+
+    return NextResponse.json({ user });
+  } catch (error) {
+    console.error("auth/me failed", error);
     return NextResponse.json({ user: null });
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      phone: true,
-      address: true,
-      createdAt: true,
-    },
-  });
-
-  return NextResponse.json({ user });
 }
 
 export async function PATCH(request: Request) {

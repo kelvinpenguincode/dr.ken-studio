@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { loadOrderDraft } from "@/lib/order-draft";
+import { errorFromResponse, readResponseJson } from "@/lib/http";
 import { userLoginSchema, userSignupSchema } from "@/lib/validations/order";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
@@ -45,9 +46,9 @@ function LoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
     });
-    const data = await response.json();
+    const data = await readResponseJson<{ error?: string }>(response);
     if (!response.ok) {
-      setError(data.error ?? "Something went wrong");
+      setError(errorFromResponse(data, "Something went wrong", response.status));
       return;
     }
     window.localStorage.removeItem("drken_skip_auth_prompt");
@@ -128,9 +129,9 @@ function SignupForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
     });
-    const data = await response.json();
+    const data = await readResponseJson<{ error?: string }>(response);
     if (!response.ok) {
-      setError(data.error ?? "Something went wrong");
+      setError(errorFromResponse(data, "Something went wrong", response.status));
       return;
     }
     window.localStorage.removeItem("drken_skip_auth_prompt");

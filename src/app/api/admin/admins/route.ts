@@ -54,16 +54,36 @@ export async function GET() {
   const { actor, error } = await requireAdminPermission("admins.manage");
   if (error || !actor) return error!;
 
-  const admins = await prisma.admin.findMany({
-    orderBy: [{ role: "asc" }, { createdAt: "asc" }],
-  });
+  try {
+    const admins = await prisma.admin.findMany({
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+    });
 
-  return NextResponse.json({
-    admins: admins.map(publicAdmin),
-    currentAdminId: actor.id,
-    currentRole: actor.role,
-    permissionCatalog: ADMIN_PERMISSIONS,
-  });
+    return NextResponse.json({
+      admins: admins.map(publicAdmin),
+      currentAdminId: actor.id,
+      currentRole: actor.role,
+      permissionCatalog: ADMIN_PERMISSIONS,
+    });
+  } catch (err) {
+    console.error("List admins failed", err);
+    const message = err instanceof Error ? err.message : "";
+    if (
+      message.includes("P2021") ||
+      message.includes("P2022") ||
+      message.toLowerCase().includes("does not exist") ||
+      message.toLowerCase().includes("unknown column")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Admin schema is out of date — run npx prisma db push so role/permissions columns exist",
+        },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ error: "Failed to load admins" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {

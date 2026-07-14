@@ -28,21 +28,26 @@ export async function getAdminActor(): Promise<AdminActor | null> {
   const session = await getAdminSessionFromCookies();
   if (!session) return null;
 
-  const admin = await prisma.admin.findUnique({
-    where: { id: session.adminId },
-  });
+  try {
+    const admin = await prisma.admin.findUnique({
+      where: { id: session.adminId },
+    });
 
-  if (!admin || !admin.active) return null;
+    if (!admin || !admin.active) return null;
 
-  const role = admin.role as AdminRoleName;
-  return {
-    id: admin.id,
-    email: admin.email,
-    name: admin.name,
-    role,
-    permissions: resolvePermissions(role, admin.permissions),
-    active: admin.active,
-  };
+    const role = (admin.role as AdminRoleName | undefined) ?? "OWNER";
+    return {
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role,
+      permissions: resolvePermissions(role, admin.permissions ?? []),
+      active: admin.active,
+    };
+  } catch (error) {
+    console.error("getAdminActor failed", error);
+    return null;
+  }
 }
 
 export async function requireAdminPermission(permission: AdminPermission) {

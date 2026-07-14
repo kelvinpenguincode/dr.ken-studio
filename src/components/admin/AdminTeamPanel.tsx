@@ -12,6 +12,7 @@ import {
   type AdminPermission,
   type AdminRoleName,
 } from "@/lib/admin-permissions";
+import { errorFromResponse, readResponseJson } from "@/lib/http";
 import { useCallback, useEffect, useState } from "react";
 
 type AdminRow = {
@@ -73,11 +74,25 @@ export function AdminTeamPanel({
         fetch("/api/admin/admins"),
         fetch("/api/admin/push-status"),
       ]);
-      const data = await adminsRes.json();
-      if (!adminsRes.ok) throw new Error(data.error || "Failed to load admins");
-      setAdmins(data.admins);
+      const data = await readResponseJson<{
+        admins?: AdminRow[];
+        error?: string;
+      }>(adminsRes);
+      if (!adminsRes.ok) {
+        throw new Error(
+          errorFromResponse(data, "Failed to load admins", adminsRes.status),
+        );
+      }
+      setAdmins(data?.admins ?? []);
       if (pushRes.ok) {
-        setPushStatus(await pushRes.json());
+        const push = await readResponseJson<{
+          configured: boolean;
+          production: boolean;
+          tokenCount: number;
+          hint: string;
+          bundleId: string | null;
+        }>(pushRes);
+        if (push) setPushStatus(push);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load admins");
@@ -116,10 +131,12 @@ export function AdminTeamPanel({
           permissions: createForm.permissions,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Create failed");
+      const data = await readResponseJson<{ email?: string; error?: string }>(res);
+      if (!res.ok) {
+        throw new Error(errorFromResponse(data, "Create failed", res.status));
+      }
       setCreateForm(emptyForm);
-      setMessage(`Created admin ${data.email}`);
+      setMessage(`Created admin ${data?.email ?? createForm.email}`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
@@ -164,10 +181,12 @@ export function AdminTeamPanel({
           permissions: editForm.permissions,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Update failed");
+      const data = await readResponseJson<{ email?: string; error?: string }>(res);
+      if (!res.ok) {
+        throw new Error(errorFromResponse(data, "Update failed", res.status));
+      }
       setEditingId(null);
-      setMessage(`Updated ${data.email}`);
+      setMessage(`Updated ${data?.email ?? "admin"}`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
@@ -190,8 +209,10 @@ export function AdminTeamPanel({
       const res = await fetch(`/api/admin/admins?id=${encodeURIComponent(admin.id)}`, {
         method: "DELETE",
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Delete failed");
+      const data = await readResponseJson<{ error?: string }>(res);
+      if (!res.ok) {
+        throw new Error(errorFromResponse(data, "Delete failed", res.status));
+      }
       setMessage(`Deleted ${admin.email}`);
       if (editingId === admin.id) setEditingId(null);
       await load();

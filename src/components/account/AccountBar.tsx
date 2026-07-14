@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/Button";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { readResponseJson } from "@/lib/http";
 import { useEffect, useState } from "react";
 
 type UserInfo = {
@@ -30,13 +31,13 @@ export function AccountBar() {
     async function loadUser() {
       try {
         const response = await fetch("/api/auth/me");
-        const data = await response.json();
+        const data = await readResponseJson<{ user?: UserInfo | null }>(response);
         if (!cancelled) {
-          setUser(data.user ?? null);
+          setUser(data?.user ?? null);
           const skipped =
             typeof window !== "undefined" &&
             window.localStorage.getItem(SKIP_KEY) === "1";
-          setShowPrompt(!data.user && !skipped && !isAdminRoute && !isAuthRoute);
+          setShowPrompt(!data?.user && !skipped && !isAdminRoute && !isAuthRoute);
         }
       } catch {
         if (!cancelled) setUser(null);
