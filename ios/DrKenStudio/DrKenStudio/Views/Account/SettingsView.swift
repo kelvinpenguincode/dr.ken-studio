@@ -31,27 +31,35 @@ struct SettingsView: View {
             }
 
             Section("Notifications") {
-                LabeledContent("Status", value: pushStatusLabel)
+                LabeledContent("Permission", value: pushStatusLabel)
                 if let token = pushManager.deviceToken {
-                    Text("Token: \(token.prefix(12))…")
+                    Text("Apple token: \(token.prefix(12))…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Apple token: not received yet")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                Button("Enable order alerts") {
+                Button("Enable & sync order alerts") {
                     Task {
                         let ok = await pushManager.requestPermissionAndRegister()
                         pushMessage = ok
-                            ? "Notifications enabled"
-                            : (pushManager.lastError ?? "Permission denied")
+                            ? (pushManager.lastSyncMessage ?? "Registered with server")
+                            : (pushManager.lastSyncMessage ?? pushManager.lastError ?? "Failed")
                         Haptics.light()
                     }
                 }
                 if let pushMessage {
                     Text(pushMessage)
                         .font(.footnote)
+                        .foregroundStyle(pushMessage.contains("Registered") || pushMessage.contains("Linked") ? .green : .secondary)
+                } else if let sync = pushManager.lastSyncMessage {
+                    Text(sync)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("You’ll get alerts when an admin changes an order status (Processing, Ready, Completed, etc.). TestFlight requires APNS_PRODUCTION=true on the server. Simulators usually cannot receive pushes.")
+                Text("Permission On alone is not enough — the app must show an Apple token and “Registered with server”. Then refresh Admin → Team; Devices should be 1+.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
