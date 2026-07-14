@@ -6,8 +6,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Use Supabase "Direct" connection for prisma db push / migrate (avoids pooler max clients).
+  // App runtime should keep using the Transaction pooler URI in DATABASE_URL.
+  directUrl = env("DIRECT_URL")
 }
 
 enum OrderStatus {
