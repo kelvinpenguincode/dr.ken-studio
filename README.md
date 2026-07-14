@@ -52,9 +52,12 @@ ADMIN_PASSWORD="admin123"
 **Option A — Supabase (recommended)**
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Copy the Postgres connection string into `DATABASE_URL`
-3. Optionally run `supabase/schema.sql` in the SQL editor
-4. Or use Prisma:
+2. Set **two** URLs on Vercel / `.env`:
+   - `DATABASE_URL` = **Transaction** pooler (`:6543`) + `?pgbouncer=true&connection_limit=1&sslmode=require`
+   - `DIRECT_URL` = Direct connection for `prisma db push`
+3. Do **not** use Session pooler (`pooler…:5432`) for the app — it causes `EMAXCONNSESSION` and takes the site down.
+4. Optionally run `supabase/schema.sql` in the SQL editor
+5. Or use Prisma:
 
 ```bash
 npm run db:push
