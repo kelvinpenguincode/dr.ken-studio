@@ -1,4 +1,5 @@
 import { createPrivateKey, createSign } from "crypto";
+import { connect as http2Connect, type ClientHttp2Session } from "http2";
 import { prisma } from "@/lib/prisma";
 import { ORDER_STATUS_LABELS } from "@/lib/utils";
 import type { OrderStatus } from "@prisma/client";
@@ -64,6 +65,73 @@ function getApnsJwt(): string {
   return token;
 }
 
+function apnsAuthority(): string {
+  return useProductionApns()
+    ? "https://api.push.apple.com"
+    : "https://api.sandbox.push.apple.com";
+}
+
+/** APNs requires HTTP/2 — Node fetch/undici often fails with "fetch failed". */
+function http2Request(
+  authority: string,
+  path: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    let client: ClientHttp2Session | null = null;
+    const timer = setTimeout(() => {
+      client?.close();
+      reject(new Error("APNs HTTP/2 request timed out"));
+    }, 15000);
+
+    try {
+      client = http2Connect(authority);
+    } catch (error) {
+      clearTimeout(timer);
+      reject(error);
+      return;
+    }
+
+    client.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    const req = client.request({
+      ":method": "POST",
+      ":path": path,
+      ...headers,
+    });
+
+    let responseStatus = 0;
+    let responseBody = "";
+
+    req.on("response", (responseHeaders) => {
+      responseStatus = Number(responseHeaders[":status"] ?? 0);
+    });
+
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      responseBody += chunk;
+    });
+
+    req.on("end", () => {
+      clearTimeout(timer);
+      client?.close();
+      resolve({ status: responseStatus, body: responseBody });
+    });
+
+    req.on("error", (error) => {
+      clearTimeout(timer);
+      client?.close();
+      reject(error);
+    });
+
+    req.end(body);
+  });
+}
+
 async function sendApns(
   deviceToken: string,
   payload: PushPayload,
@@ -74,12 +142,9 @@ async function sendApns(
   }
 
   const bundleId = process.env.APNS_BUNDLE_ID!;
-  const useSandbox = !useProductionApns();
-  const host = useSandbox
-    ? "https://api.sandbox.push.apple.com"
-    : "https://api.push.apple.com";
+  const authority = apnsAuthority();
 
-  const body = {
+  const body = JSON.stringify({
     aps: {
       alert: {
         title: payload.title,
@@ -89,37 +154,45 @@ async function sendApns(
       badge: 1,
     },
     requestId: payload.requestId,
-  };
+  });
 
   try {
-    const response = await fetch(`${host}/3/device/${deviceToken}`, {
-      method: "POST",
-      headers: {
-        authorization: `bearer ${getApnsJwt()}`,
+    const jwt = getApnsJwt();
+    const response = await http2Request(
+      authority,
+      `/3/device/${deviceToken}`,
+      {
+        authorization: `bearer ${jwt}`,
         "apns-topic": bundleId,
         "apns-push-type": "alert",
         "apns-priority": "10",
         "content-type": "application/json",
       },
-      body: JSON.stringify(body),
-    });
+      body,
+    );
 
     if (response.status === 410) {
       await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
       return { ok: false, status: 410, reason: "Gone" };
     }
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[push] APNs error", response.status, text, "topic=", bundleId);
-      let reason = text;
+    if (response.status < 200 || response.status >= 300) {
+      console.error(
+        "[push] APNs error",
+        response.status,
+        response.body,
+        "topic=",
+        bundleId,
+        "host=",
+        authority,
+      );
+      let reason = response.body || `HTTP ${response.status}`;
       try {
-        reason = (JSON.parse(text) as { reason?: string }).reason ?? text;
+        reason =
+          (JSON.parse(response.body) as { reason?: string }).reason ?? reason;
       } catch {
         /* keep text */
       }
-      // Only drop tokens that are truly invalid — wrong bundle (TopicDisallowed)
-      // must keep the registration so Devices does not reset to 0.
       if (reason === "BadDeviceToken" || reason === "Unregistered") {
         await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
       }
@@ -129,9 +202,12 @@ async function sendApns(
     return { ok: true, status: response.status };
   } catch (error) {
     console.error("[push] APNs request failed", error);
+    const message = error instanceof Error ? error.message : "request failed";
     return {
       ok: false,
-      reason: error instanceof Error ? error.message : "request failed",
+      reason: message.includes("fetch failed")
+        ? "APNs HTTP/2 connection failed"
+        : message,
     };
   }
 }
@@ -202,7 +278,12 @@ export async function notifyOrderStatusChange(
       "configured=",
       isApnsConfigured(),
     );
-    return { sent: 0, attempted: 0, configured: isApnsConfigured(), results: [] as ApnsSendResult[] };
+    return {
+      sent: 0,
+      attempted: 0,
+      configured: isApnsConfigured(),
+      results: [] as ApnsSendResult[],
+    };
   }
 
   console.info(
