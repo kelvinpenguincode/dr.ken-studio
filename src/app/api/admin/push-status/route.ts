@@ -1,5 +1,6 @@
 import { requireAdminPermission } from "@/lib/admin-session";
 import {
+  clearAllDevicePushTokens,
   getPushConfigStatus,
   sendTestPushToAllDevices,
 } from "@/lib/services/push";
@@ -28,9 +29,9 @@ export async function GET() {
         "Using sandbox APNs — TestFlight builds will not receive pushes. Set APNS_PRODUCTION=true.";
     } else if (tokenCount === 0) {
       hint =
-        "APNs configured, but Devices is 0. On the phone: Enable order alerts / Notify me, then refresh this page.";
+        "APNs configured, but Devices is 0. On the phone: Enable & sync order alerts until it says Registered with server, then refresh.";
     } else {
-      hint = `Production APNs ready · topic ${config.bundleId}. Use “Send test push” to verify.`;
+      hint = `Production APNs ready · topic ${config.bundleId}. Use “Send test push”. If you see BadDeviceToken, clear tokens and re-sync from the phone.`;
     }
 
     return NextResponse.json({
@@ -71,12 +72,33 @@ export async function POST() {
             ? "InvalidProviderToken: APNS_KEY_ID, APNS_TEAM_ID, or APNS_PRIVATE_KEY is wrong. Key ID + Team ID are each 10 characters; paste the full .p8 including BEGIN/END lines; Key ID must belong to that .p8 file."
             : firstFailure?.reason === "BadEnvironmentKeyInToken"
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
-              : firstFailure
-                ? `APNs rejected the send: ${firstFailure.reason}`
-                : "No device tokens registered yet.",
+              : firstFailure?.reason === "BadDeviceToken" ||
+                  firstFailure?.reason === "Unregistered" ||
+                  firstFailure?.reason === "Gone"
+                ? "BadDeviceToken: the saved phone token is stale/invalid (normal after earlier failed setup). Click “Clear device tokens”, then on the phone tap Enable & sync again, then Send test push."
+                : firstFailure
+                  ? `APNs rejected the send: ${firstFailure.reason}`
+                  : "No device tokens registered yet.",
     });
   } catch (err) {
     console.error("Test push failed", err);
     return NextResponse.json({ error: "Test push failed" }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  const { error } = await requireAdminPermission("admins.manage");
+  if (error) return error;
+
+  try {
+    const result = await clearAllDevicePushTokens();
+    return NextResponse.json({
+      ok: true,
+      deleted: result.deleted,
+      hint: `Cleared ${result.deleted} device token(s). On the phone: More → Enable & sync order alerts, then refresh this page.`,
+    });
+  } catch (err) {
+    console.error("Clear push tokens failed", err);
+    return NextResponse.json({ error: "Failed to clear tokens" }, { status: 500 });
   }
 }
