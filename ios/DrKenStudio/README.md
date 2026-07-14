@@ -144,7 +144,7 @@ Add to `.env` and Vercel:
 ```env
 APNS_KEY_ID="XXXXXXXXXX"
 APNS_TEAM_ID="XXXXXXXXXX"
-APNS_BUNDLE_ID="com.drkenstudio.orders"
+APNS_BUNDLE_ID="com.drkenstudio.drkenstudio"
 APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----"
 APNS_PRODUCTION="false"
 ```

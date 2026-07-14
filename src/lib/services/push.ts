@@ -9,6 +9,12 @@ type PushPayload = {
   requestId?: string;
 };
 
+export type ApnsSendResult = {
+  ok: boolean;
+  status?: number;
+  reason?: string;
+};
+
 function isApnsConfigured(): boolean {
   return Boolean(
     process.env.APNS_KEY_ID &&
@@ -22,7 +28,6 @@ function isApnsConfigured(): boolean {
 function useProductionApns(): boolean {
   if (process.env.APNS_PRODUCTION === "true") return true;
   if (process.env.APNS_PRODUCTION === "false") return false;
-  // Default: production on Vercel production deploys
   return process.env.VERCEL_ENV === "production";
 }
 
@@ -59,10 +64,13 @@ function getApnsJwt(): string {
   return token;
 }
 
-async function sendApns(deviceToken: string, payload: PushPayload): Promise<boolean> {
+async function sendApns(
+  deviceToken: string,
+  payload: PushPayload,
+): Promise<ApnsSendResult> {
   if (!isApnsConfigured()) {
     console.warn("[push] APNs env vars not configured — skipping send");
-    return false;
+    return { ok: false, reason: "not_configured" };
   }
 
   const bundleId = process.env.APNS_BUNDLE_ID!;
@@ -96,22 +104,35 @@ async function sendApns(deviceToken: string, payload: PushPayload): Promise<bool
       body: JSON.stringify(body),
     });
 
-    if (response.status === 410 || response.status === 400) {
-      // Token invalid / expired — remove it
+    if (response.status === 410) {
       await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-      return false;
+      return { ok: false, status: 410, reason: "Gone" };
     }
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("[push] APNs error", response.status, text);
-      return false;
+      console.error("[push] APNs error", response.status, text, "topic=", bundleId);
+      let reason = text;
+      try {
+        reason = (JSON.parse(text) as { reason?: string }).reason ?? text;
+      } catch {
+        /* keep text */
+      }
+      // Only drop tokens that are truly invalid — wrong bundle (TopicDisallowed)
+      // must keep the registration so Devices does not reset to 0.
+      if (reason === "BadDeviceToken" || reason === "Unregistered") {
+        await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+      }
+      return { ok: false, status: response.status, reason };
     }
 
-    return true;
+    return { ok: true, status: response.status };
   } catch (error) {
     console.error("[push] APNs request failed", error);
-    return false;
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : "request failed",
+    };
   }
 }
 
@@ -181,7 +202,7 @@ export async function notifyOrderStatusChange(
       "configured=",
       isApnsConfigured(),
     );
-    return { sent: 0, configured: isApnsConfigured() };
+    return { sent: 0, attempted: 0, configured: isApnsConfigured(), results: [] as ApnsSendResult[] };
   }
 
   console.info(
@@ -190,17 +211,43 @@ export async function notifyOrderStatusChange(
     "device(s)",
     "production=",
     useProductionApns(),
+    "bundle=",
+    process.env.APNS_BUNDLE_ID,
     "requestId=",
     requestId,
   );
 
+  const results: ApnsSendResult[] = [];
   let sent = 0;
   for (const row of tokens) {
-    const ok = await sendApns(row.token, payload);
-    if (ok) sent += 1;
+    const result = await sendApns(row.token, payload);
+    results.push(result);
+    if (result.ok) sent += 1;
   }
 
-  return { sent, configured: isApnsConfigured() };
+  return { sent, attempted: tokens.length, configured: isApnsConfigured(), results };
+}
+
+export async function sendTestPushToAllDevices() {
+  const tokens = await prisma.devicePushToken.findMany({ take: 20 });
+  const payload: PushPayload = {
+    title: "Test notification",
+    body: "Dr. Ken Studio push is working.",
+  };
+  const results: Array<ApnsSendResult & { tokenPrefix: string }> = [];
+  let sent = 0;
+  for (const row of tokens) {
+    const result = await sendApns(row.token, payload);
+    results.push({ ...result, tokenPrefix: row.token.slice(0, 12) });
+    if (result.ok) sent += 1;
+  }
+  return {
+    sent,
+    attempted: tokens.length,
+    bundleId: process.env.APNS_BUNDLE_ID ?? null,
+    production: useProductionApns(),
+    results,
+  };
 }
 
 export function getPushConfigStatus() {
@@ -211,5 +258,7 @@ export function getPushConfigStatus() {
     keyIdConfigured: Boolean(process.env.APNS_KEY_ID),
     teamIdConfigured: Boolean(process.env.APNS_TEAM_ID),
     privateKeyConfigured: Boolean(process.env.APNS_PRIVATE_KEY),
+    expectedBundleNote:
+      "APNS_BUNDLE_ID must exactly match the iOS app Bundle Identifier in Xcode (Signing & Capabilities).",
   };
 }

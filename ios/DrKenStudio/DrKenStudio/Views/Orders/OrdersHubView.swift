@@ -158,14 +158,18 @@ struct MyOrdersView: View {
         NavigationLink {
             OrderDetailView(order: order)
         } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(order.requestId).font(.headline)
-                    Text(order.totals.usdText).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(order.requestId).font(.headline)
+                        Text(order.totals.usdText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusChip(status: order.status)
                 }
-                Spacer()
-                StatusChip(status: order.status)
+                OrderStatusTracker(status: order.status)
             }
+            .padding(.vertical, 4)
         }
     }
 

@@ -12,6 +12,7 @@ import {
   getProductPriceUsd,
 } from "@/lib/pricing";
 import { Card } from "@/components/ui/Card";
+import { OrderStatusTracker } from "@/components/orders/OrderStatusTracker";
 
 type OrderSummaryProps = {
   order: OrderDetail;
@@ -22,6 +23,10 @@ export function OrderSummary({ order }: OrderSummaryProps) {
 
   return (
     <div className="space-y-4">
+      <Card title="Order progress">
+        <OrderStatusTracker status={order.status} />
+      </Card>
+
       <Card>
         <dl className="grid gap-3 text-sm sm:grid-cols-2">
           <SummaryItem label="Request ID" value={order.requestId} />

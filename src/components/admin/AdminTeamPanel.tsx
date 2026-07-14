@@ -54,6 +54,7 @@ export function AdminTeamPanel({
     hint: string;
     bundleId: string | null;
   } | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -242,7 +243,7 @@ export function AdminTeamPanel({
       ) : null}
 
       {pushStatus ? (
-        <Card className="space-y-2 p-5">
+        <Card className="space-y-3 p-5">
           <h2 className="text-lg font-semibold text-foreground">Push notifications</h2>
           <p className="text-sm text-muted">{pushStatus.hint}</p>
           <p className="text-xs text-muted">
@@ -251,6 +252,39 @@ export function AdminTeamPanel({
             {pushStatus.tokenCount}
             {pushStatus.bundleId ? ` · Bundle: ${pushStatus.bundleId}` : ""}
           </p>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={pushBusy || !pushStatus.configured || pushStatus.tokenCount === 0}
+            onClick={() => {
+              void (async () => {
+                setPushBusy(true);
+                setError("");
+                setMessage("");
+                try {
+                  const res = await fetch("/api/admin/push-status", { method: "POST" });
+                  const data = await readResponseJson<{
+                    hint?: string;
+                    error?: string;
+                    sent?: number;
+                  }>(res);
+                  if (!res.ok) {
+                    throw new Error(
+                      errorFromResponse(data, "Test push failed", res.status),
+                    );
+                  }
+                  setMessage(data?.hint ?? `Sent ${data?.sent ?? 0} test push(es)`);
+                  await load();
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Test push failed");
+                } finally {
+                  setPushBusy(false);
+                }
+              })();
+            }}
+          >
+            {pushBusy ? "Sending..." : "Send test push"}
+          </Button>
         </Card>
       ) : null}
 

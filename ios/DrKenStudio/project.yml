@@ -17,7 +17,7 @@ settings:
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
     INFOPLIST_KEY_NSHumanReadableCopyright: ""
-    PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
+    PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.drkenstudio
 targets:
   DrKenStudio:
     type: application
@@ -28,7 +28,7 @@ targets:
           - "**/*.md"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
+        PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.drkenstudio
         INFOPLIST_FILE: DrKenStudio/Info.plist
     info:
       path: DrKenStudio/Info.plist

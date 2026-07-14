@@ -2,6 +2,7 @@
 
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { Alert, PageShell, PageTitle } from "@/components/layout/PageShell";
+import { OrderStatusTracker } from "@/components/orders/OrderStatusTracker";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -160,6 +161,9 @@ function OrderGroup({
                     <p className="text-xs text-muted">{formatDateTime(order.createdAt)}</p>
                   </div>
                   <StatusBadge status={order.status} />
+                </div>
+                <div className="mt-4">
+                  <OrderStatusTracker status={order.status} compact />
                 </div>
                 <p className="mt-2 text-sm text-muted">
                   {formatUsd(totals.usd)} · {formatCny(totals.cny)}

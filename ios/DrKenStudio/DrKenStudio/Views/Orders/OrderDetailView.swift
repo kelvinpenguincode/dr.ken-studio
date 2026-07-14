@@ -22,6 +22,9 @@ struct OrderDetailView: View {
                 }
                 .studioCard()
 
+                OrderStatusTracker(status: order.status)
+                    .studioCard()
+
                 infoCard
 
                 sectionTitle("Incoming packages")
