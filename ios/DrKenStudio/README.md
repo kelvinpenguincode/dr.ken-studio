@@ -60,33 +60,26 @@ If you use XcodeGen: `cd ios/DrKenStudio && xcodegen generate` (updated `project
 
 ---
 
-## Open in Xcode (recommended — 5 minutes)
+## Open in Xcode (no brew / no XcodeGen needed)
 
-### Option A — Create a new Xcode project and drop files in
+The repo already includes `DrKenStudio.xcodeproj`. On the rented Mac:
 
-1. On a **Mac**, copy the `ios/DrKenStudio` folder over (USB, GitHub clone, iCloud, etc.)
-2. Open **Xcode** → **File → New → Project**
-3. Choose **iOS → App**
-4. Settings:
-   - Product Name: `DrKenStudio`
-   - Team: your Apple ID team
-   - Organization Identifier: e.g. `com.yourname`
-   - Interface: **SwiftUI**
-   - Language: **Swift**
-   - Storage: none
-5. Delete the default `ContentView.swift` / `DrKenStudioApp.swift` that Xcode created
-6. In Finder, drag the entire `DrKenStudio/` source folder (App, Models, Services, Theme, Views, Info.plist) into the Xcode project navigator
-7. Check **Copy items if needed** and **Create groups**
-8. Select the target → **Signing & Capabilities** → choose your Team
-9. At the top of `App/AppState.swift`, set:
-
-```swift
-static let defaultBaseURL = "https://YOUR-REAL-VERCEL-URL.vercel.app"
+```bash
+cd ~
+git clone https://github.com/kelvinpenguincode/dr.ken-studio.git
+# if already cloned: cd ~/dr.ken-studio && git pull
+open ~/dr.ken-studio/ios/DrKenStudio/DrKenStudio.xcodeproj
 ```
 
-10. Pick an iPhone simulator → press **Run** (▶)
+Then in Xcode:
+1. Select the **DrKenStudio** target → **Signing & Capabilities** → your Team
+2. Confirm **Push Notifications** is present (entitlements file is already wired)
+3. Set your Vercel URL in **More → Server**, or in `App/AppState.swift`
+4. Run / Archive
 
-### Option B — XcodeGen (if you have Homebrew)
+**Do not open** `~/Desktop/drkenstudio` — that old project causes the Info.plist error.
+
+### Optional — XcodeGen (only if you can install tools)
 
 ```bash
 brew install xcodegen
@@ -94,8 +87,6 @@ cd ios/DrKenStudio
 xcodegen generate
 open DrKenStudio.xcodeproj
 ```
-
-Then set the API URL as in step 9 above.
 
 ---
 
