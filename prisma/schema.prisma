@@ -1,4 +1,4 @@
-// Fengjie Orders — database schema
+// Dr. Ken Studio — database schema
 // Works with Supabase PostgreSQL or any PostgreSQL instance via DATABASE_URL
 
 generator client {
@@ -41,11 +41,44 @@ model Admin {
   @@map("admins")
 }
 
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  phone        String?
+  address      String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  orders     OrderRequest[]
+  pushTokens DevicePushToken[]
+
+  @@map("users")
+}
+
+model DevicePushToken {
+  id             String   @id @default(cuid())
+  token          String   @unique
+  platform       String   @default("ios")
+  userId         String?  @map("user_id")
+  watchRequestId String?  @map("watch_request_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([watchRequestId])
+  @@map("device_push_tokens")
+}
+
 model Product {
   id          String   @id @default(cuid())
   name        String   @unique
   category    String?
   description String?
+  priceUsd    Decimal  @default(0) @map("price_usd") @db.Decimal(10, 2)
   active      Boolean  @default(true)
   sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -63,15 +96,18 @@ model OrderRequest {
   lookupToken    String      @unique @map("lookup_token")
   formFillerName String      @map("form_filler_name")
   status         OrderStatus @default(SUBMITTED)
+  userId         String?     @map("user_id")
   createdAt      DateTime    @default(now()) @map("created_at")
   updatedAt      DateTime    @updatedAt @map("updated_at")
 
+  user           User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   incomingOrders IncomingOrder[]
   recipients     Recipient[]
   statusHistory  OrderStatusHistory[]
   adminNotes     AdminNote[]
   adminErrors    OrderAdminError[]
 
+  @@index([userId])
   @@map("order_requests")
 }
 

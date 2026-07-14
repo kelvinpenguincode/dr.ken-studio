@@ -77,6 +77,34 @@ export const adminLoginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const userSignupSchema = z.object({
+  email: z.string().email("Enter a valid email"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  name: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+});
+
+export const userLoginSchema = z.object({
+  email: z.string().email("Enter a valid email"),
+  password: z.string().min(1, "Password is required"),
+});
+
+export const userProfileSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+});
+
+export const claimOrderSchema = z.object({
+  orderNumber: z.string().min(1, "Enter a request ID or order number"),
+});
+
+export const adminLinkUserSchema = z.object({
+  userEmail: z.string().email("Enter a valid user email").optional().or(z.literal("")),
+  unlink: z.boolean().optional(),
+});
+
 export const adminOrderUpdateSchema = z.object({
   status: z.enum([
     "SUBMITTED",
@@ -101,6 +129,8 @@ export const adminOrderUpdateSchema = z.object({
       ]),
     )
     .optional(),
+  userEmail: z.union([z.string().email(), z.literal("")]).optional(),
+  unlinkUser: z.boolean().optional(),
 });
 
 export const defaultOrderValues: OrderRequestFormValues = {
