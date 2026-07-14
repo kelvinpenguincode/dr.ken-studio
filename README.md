@@ -182,3 +182,11 @@ npm run db:push      # Push schema to database
 npm run db:seed      # Seed products and admin user
 npm run db:setup     # Push schema + seed
 ```
+
+## iOS app (Xcode)
+
+A native SwiftUI companion app lives in [`ios/DrKenStudio`](ios/DrKenStudio).
+
+- Same cream/gold look, easier phone navigation (tabs + step wizard)
+- Talks to your deployed Next.js/Vercel API
+- Open on a **Mac with Xcode** — see `ios/DrKenStudio/README.md`

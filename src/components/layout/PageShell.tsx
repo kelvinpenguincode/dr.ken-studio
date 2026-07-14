@@ -8,7 +8,7 @@ type PageShellProps = {
 
 export function PageShell({ children, className }: PageShellProps) {
   return (
-    <div className={cn("min-h-screen bg-cream px-4 py-8 sm:px-6 lg:px-8", className)}>
+    <div className={cn("min-h-screen bg-cream px-4 py-8 pt-20 sm:px-6 lg:px-8", className)}>
       <div className="mx-auto w-full max-w-3xl space-y-6">{children}</div>
     </div>
   );

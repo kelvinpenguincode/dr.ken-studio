@@ -1,5 +1,16 @@
 import type { OrderDetail } from "@/types/order";
-import { ADMIN_ERROR_LABELS, ORDER_STATUS_LABELS, formatDateTime } from "@/lib/utils";
+import {
+  ADMIN_ERROR_LABELS,
+  ORDER_STATUS_LABELS,
+  formatDateTime,
+} from "@/lib/utils";
+import {
+  CNY_RATE,
+  calculateOrderTotals,
+  formatCny,
+  formatUsd,
+  getProductPriceUsd,
+} from "@/lib/pricing";
 import { Card } from "@/components/ui/Card";
 
 type OrderSummaryProps = {
@@ -7,6 +18,8 @@ type OrderSummaryProps = {
 };
 
 export function OrderSummary({ order }: OrderSummaryProps) {
+  const totals = calculateOrderTotals(order);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -15,6 +28,15 @@ export function OrderSummary({ order }: OrderSummaryProps) {
           <SummaryItem label="Status" value={ORDER_STATUS_LABELS[order.status]} />
           <SummaryItem label="Submitted" value={formatDateTime(order.createdAt)} />
           <SummaryItem label="Form Filler Name" value={order.formFillerName} />
+          {order.user ? (
+            <SummaryItem
+              label="Linked account"
+              value={order.user.name ? `${order.user.name} (${order.user.email})` : order.user.email}
+              className="sm:col-span-2"
+            />
+          ) : (
+            <SummaryItem label="Linked account" value="Guest (not linked)" className="sm:col-span-2" />
+          )}
         </dl>
       </Card>
 
@@ -53,14 +75,38 @@ export function OrderSummary({ order }: OrderSummaryProps) {
                 ) : null}
               </dl>
               <ul className="mt-3 space-y-1 text-sm text-muted">
-                {recipient.products.map((product) => (
-                  <li key={product.id}>
-                    {product.product.name} × {product.quantity}
-                  </li>
-                ))}
+                {recipient.products.map((product) => {
+                  const unit = getProductPriceUsd(
+                    product.product.name,
+                    Number(product.product.priceUsd),
+                  );
+                  return (
+                    <li key={product.id}>
+                      {product.product.name} × {product.quantity}{" "}
+                      <span className="text-xs">
+                        ({formatUsd(unit)} each)
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card title="Order total">
+        <div className="space-y-1 text-sm">
+          <p className="text-lg font-semibold text-foreground">
+            {formatUsd(totals.usd)}
+          </p>
+          <p className="text-muted">
+            ≈ {formatCny(totals.cny)}{" "}
+            <span className="text-xs">(USD × {CNY_RATE})</span>
+          </p>
+          <p className="text-xs text-muted">
+            Total is based on recipient delivery products.
+          </p>
         </div>
       </Card>
 

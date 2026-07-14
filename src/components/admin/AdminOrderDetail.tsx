@@ -5,6 +5,7 @@ import { OrderSummary } from "@/components/orders/OrderSummary";
 import { Alert } from "@/components/layout/PageShell";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import {
@@ -32,6 +33,8 @@ export function AdminOrderDetail({ order: initialOrder }: AdminOrderDetailProps)
   const [status, setStatus] = useState<OrderStatus>(order.status);
   const [statusNote, setStatusNote] = useState("");
   const [adminNote, setAdminNote] = useState("");
+  const [userEmail, setUserEmail] = useState(order.user?.email ?? "");
+  const [unlinkUser, setUnlinkUser] = useState(false);
   const [errors, setErrors] = useState<AdminErrorType[]>(
     order.adminErrors.map((item) => item.errorType),
   );
@@ -61,6 +64,8 @@ export function AdminOrderDetail({ order: initialOrder }: AdminOrderDetailProps)
           note: statusNote || undefined,
           adminNote: adminNote || undefined,
           errors,
+          userEmail: unlinkUser ? undefined : userEmail || undefined,
+          unlinkUser: unlinkUser || undefined,
         }),
       });
 
@@ -73,6 +78,8 @@ export function AdminOrderDetail({ order: initialOrder }: AdminOrderDetailProps)
       setStatus(data.status);
       setStatusNote("");
       setAdminNote("");
+      setUserEmail(data.user?.email ?? "");
+      setUnlinkUser(false);
       setErrors(data.adminErrors.map((item: { errorType: AdminErrorType }) => item.errorType));
       setMessage("Order updated successfully.");
       router.refresh();
@@ -125,6 +132,37 @@ export function AdminOrderDetail({ order: initialOrder }: AdminOrderDetailProps)
                 value={statusNote}
                 onChange={(event) => setStatusNote(event.target.value)}
               />
+            </div>
+          </Card>
+
+          <Card title="Linked customer account">
+            <div className="space-y-3">
+              <p className="text-sm text-muted">
+                Current:{" "}
+                {order.user
+                  ? `${order.user.name ?? "Unnamed"} · ${order.user.email}`
+                  : "Not linked (guest order)"}
+              </p>
+              <Input
+                label="Link to user email"
+                type="email"
+                placeholder="customer@email.com"
+                value={userEmail}
+                onChange={(event) => {
+                  setUserEmail(event.target.value);
+                  setUnlinkUser(false);
+                }}
+                disabled={unlinkUser}
+              />
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-accent"
+                  checked={unlinkUser}
+                  onChange={(event) => setUnlinkUser(event.target.checked)}
+                />
+                Unlink from account
+              </label>
             </div>
           </Card>
 

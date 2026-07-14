@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { PRODUCT_PRICES_USD } from "../src/lib/pricing";
 
 const prisma = new PrismaClient();
 
@@ -11,30 +12,15 @@ const PRODUCT_CATALOG: Array<{
   category: string;
   items: string[];
 }> = [
-  {
-    category: "brān®",
-    items: ["brān® - Chocolate Mint"],
-  },
-  {
-    category: "uüth®",
-    items: ["uüth® - Superberry"],
-  },
-  {
-    category: "plôs® THERMO",
-    items: ["plôs® THERMO - Mocha"],
-  },
+  { category: "brān®", items: ["brān® - Chocolate Mint"] },
+  { category: "uüth®", items: ["uüth® - Superberry"] },
+  { category: "plôs® THERMO", items: ["plôs® THERMO - Mocha"] },
   {
     category: "Reserve® v2.0 Limited Edition",
     items: ["Reserve® v2.0 Limited Edition"],
   },
-  {
-    category: "AM Essentials® v2.0",
-    items: ["AM Essentials® v2.0 - Caplets"],
-  },
-  {
-    category: "PM Essentials® v2.0",
-    items: ["PM Essentials® v2.0 - Caplets"],
-  },
+  { category: "AM Essentials® v2.0", items: ["AM Essentials® v2.0 - Caplets"] },
+  { category: "PM Essentials® v2.0", items: ["PM Essentials® v2.0 - Caplets"] },
   {
     category: "Luminesce® v2.0",
     items: [
@@ -45,30 +31,12 @@ const PRODUCT_CATALOG: Array<{
       "Luminesce® v2.0 - Serum",
     ],
   },
-  {
-    category: "Finiti® v2.0",
-    items: ["Finiti® v2.0"],
-  },
-  {
-    category: "RevitaBLŪ® v2.0",
-    items: ["RevitaBLŪ® v2.0"],
-  },
-  {
-    category: "M1ND™ v2.0",
-    items: ["M1ND™ v2.0"],
-  },
-  {
-    category: "L1FE NMN® v2.0",
-    items: ["L1FE NMN® v2.0"],
-  },
-  {
-    category: "m·mūn 365®",
-    items: ["m·mūn 365®"],
-  },
-  {
-    category: "(M)mūn™ Powder",
-    items: ["(M)mūn™ Powder Supplement"],
-  },
+  { category: "Finiti® v2.0", items: ["Finiti® v2.0"] },
+  { category: "RevitaBLŪ® v2.0", items: ["RevitaBLŪ® v2.0"] },
+  { category: "M1ND™ v2.0", items: ["M1ND™ v2.0"] },
+  { category: "L1FE NMN® v2.0", items: ["L1FE NMN® v2.0"] },
+  { category: "m·mūn 365®", items: ["m·mūn 365®"] },
+  { category: "(M)mūn™ Powder", items: ["(M)mūn™ Powder Supplement"] },
   {
     category: "tuün® RESONATE",
     items: [
@@ -82,7 +50,6 @@ const PRODUCT_CATALOG: Array<{
 async function main() {
   console.log("Seeding products...");
 
-  // Deactivate any old sample products that are no longer in the catalog
   const catalogNames = PRODUCT_CATALOG.flatMap((group) => group.items);
   await prisma.product.updateMany({
     where: { name: { notIn: catalogNames } },
@@ -92,11 +59,13 @@ async function main() {
   let sortOrder = 0;
   for (const group of PRODUCT_CATALOG) {
     for (const name of group.items) {
+      const priceUsd = PRODUCT_PRICES_USD[name] ?? 0;
       await prisma.product.upsert({
         where: { name },
         update: {
           category: group.category,
           description: group.category,
+          priceUsd,
           active: true,
           sortOrder,
         },
@@ -104,6 +73,7 @@ async function main() {
           name,
           category: group.category,
           description: group.category,
+          priceUsd,
           active: true,
           sortOrder,
         },

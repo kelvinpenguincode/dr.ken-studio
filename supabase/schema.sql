@@ -29,11 +29,36 @@ CREATE TABLE admins (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT,
+  phone TEXT,
+  address TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE device_push_tokens (
+  id TEXT PRIMARY KEY,
+  token TEXT UNIQUE NOT NULL,
+  platform TEXT NOT NULL DEFAULT 'ios',
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  watch_request_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_device_push_tokens_user_id ON device_push_tokens(user_id);
+CREATE INDEX idx_device_push_tokens_watch_request_id ON device_push_tokens(watch_request_id);
+
 CREATE TABLE products (
   id TEXT PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
   category TEXT,
   description TEXT,
+  price_usd NUMERIC(10, 2) NOT NULL DEFAULT 0,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -45,6 +70,7 @@ CREATE TABLE order_requests (
   lookup_token TEXT UNIQUE NOT NULL,
   form_filler_name TEXT NOT NULL,
   status order_status NOT NULL DEFAULT 'SUBMITTED',
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -108,6 +134,7 @@ CREATE TABLE order_admin_errors (
 
 CREATE INDEX idx_order_requests_request_id ON order_requests(request_id);
 CREATE INDEX idx_order_requests_status ON order_requests(status);
+CREATE INDEX idx_order_requests_user_id ON order_requests(user_id);
 CREATE INDEX idx_incoming_orders_order_number ON incoming_orders(order_number);
 CREATE INDEX idx_recipients_phone ON recipients(phone);
 CREATE INDEX idx_recipients_name ON recipients(name);

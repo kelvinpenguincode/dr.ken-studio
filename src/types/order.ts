@@ -2,6 +2,9 @@ import type { Prisma } from "@prisma/client";
 
 /** Shared Prisma include for full order details */
 export const orderDetailInclude = {
+  user: {
+    select: { id: true, email: true, name: true, phone: true },
+  },
   incomingOrders: {
     orderBy: { sortOrder: "asc" as const },
     include: {
@@ -39,4 +42,5 @@ export type ProductOption = {
   name: string;
   category: string | null;
   description: string | null;
+  priceUsd?: number | string | null;
 };

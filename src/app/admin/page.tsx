@@ -1,6 +1,7 @@
 import { AdminFilters } from "@/components/admin/AdminFilters";
 import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminOrdersTable } from "@/components/admin/AdminOrdersTable";
+import { AdminReportsPanel } from "@/components/admin/AdminReportsPanel";
 import { AdminStats } from "@/components/admin/AdminStats";
 import { getAdminSessionFromCookies } from "@/lib/admin-session";
 import {
@@ -53,6 +54,8 @@ export default async function AdminDashboardPage({ searchParams }: AdminPageProp
         <Suspense fallback={<div className="text-sm text-muted">Loading filters...</div>}>
           <AdminFilters products={products} />
         </Suspense>
+
+        <AdminReportsPanel />
 
         <AdminOrdersTable orders={orders} />
       </div>

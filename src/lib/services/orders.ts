@@ -5,11 +5,16 @@ import { orderDetailInclude, type OrderDetail } from "@/types/order";
 import type { AdminErrorType, OrderStatus, Prisma } from "@prisma/client";
 
 export async function getActiveProducts() {
-  return prisma.product.findMany({
+  const products = await prisma.product.findMany({
     where: { active: true },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, category: true, description: true },
+    select: { id: true, name: true, category: true, description: true, priceUsd: true },
   });
+
+  return products.map((product) => ({
+    ...product,
+    priceUsd: Number(product.priceUsd),
+  }));
 }
 
 export async function getAdminOrderStats() {
@@ -27,7 +32,10 @@ export async function getAdminOrderStats() {
   return { total, byStatus };
 }
 
-export async function createOrderRequest(data: OrderRequestFormValues) {
+export async function createOrderRequest(
+  data: OrderRequestFormValues,
+  userId?: string | null,
+) {
   const requestId = generateRequestId();
   const lookupToken = generateLookupToken();
 
@@ -38,6 +46,7 @@ export async function createOrderRequest(data: OrderRequestFormValues) {
         lookupToken,
         formFillerName: data.formFillerName,
         status: "SUBMITTED",
+        userId: userId ?? null,
         incomingOrders: {
           create: data.incomingOrders.map((incoming, index) => ({
             orderNumber: incoming.orderNumber.trim(),
@@ -69,7 +78,7 @@ export async function createOrderRequest(data: OrderRequestFormValues) {
         statusHistory: {
           create: {
             status: "SUBMITTED",
-            changedBy: "customer",
+            changedBy: userId ? "customer-account" : "customer",
             note: "Order submitted",
           },
         },
@@ -220,13 +229,158 @@ export async function listOrdersForAdmin(filters: AdminOrderFilters) {
   return prisma.orderRequest.findMany({
     where,
     include: {
+      user: { select: { id: true, email: true, name: true } },
       incomingOrders: {
         include: { products: { include: { product: true } } },
       },
-      recipients: true,
+      recipients: {
+        include: { products: { include: { product: true } } },
+      },
     },
     orderBy: { createdAt: "desc" },
   });
+}
+
+export async function listOrdersForUser(userId: string) {
+  return prisma.orderRequest.findMany({
+    where: { userId },
+    include: orderDetailInclude,
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function claimOrderForUser(userId: string, orderNumber: string) {
+  const trimmed = orderNumber.trim();
+  const order = await prisma.orderRequest.findFirst({
+    where: {
+      OR: [
+        { requestId: { equals: trimmed, mode: "insensitive" } },
+        {
+          incomingOrders: {
+            some: { orderNumber: { equals: trimmed, mode: "insensitive" } },
+          },
+        },
+      ],
+    },
+  });
+
+  if (!order) {
+    throw new Error("No matching order found");
+  }
+
+  if (order.userId && order.userId !== userId) {
+    throw new Error("This order is already linked to another account");
+  }
+
+  if (order.userId === userId) {
+    return getOrderByRequestId(order.requestId);
+  }
+
+  return prisma.orderRequest.update({
+    where: { id: order.id },
+    data: { userId },
+    include: orderDetailInclude,
+  });
+}
+
+export async function linkOrderToUserByEmail(
+  requestId: string,
+  userEmail: string | null,
+  unlink = false,
+) {
+  if (unlink || !userEmail) {
+    return prisma.orderRequest.update({
+      where: { requestId },
+      data: { userId: null },
+      include: orderDetailInclude,
+    });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: userEmail.toLowerCase() },
+  });
+
+  if (!user) {
+    throw new Error("No user found with that email");
+  }
+
+  return prisma.orderRequest.update({
+    where: { requestId },
+    data: { userId: user.id },
+    include: orderDetailInclude,
+  });
+}
+
+export async function generateSalesReport(filters: AdminOrderFilters & {
+  from?: string;
+  to?: string;
+}) {
+  const where: Prisma.OrderRequestWhereInput = {};
+
+  if (filters.status) where.status = filters.status;
+  if (filters.from || filters.to) {
+    where.createdAt = {};
+    if (filters.from) where.createdAt.gte = new Date(filters.from);
+    if (filters.to) {
+      const end = new Date(filters.to);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
+  }
+
+  const orders = await prisma.orderRequest.findMany({
+    where,
+    include: {
+      recipients: {
+        include: { products: { include: { product: true } } },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const productTotals = new Map<
+    string,
+    { name: string; quantity: number; unitPrice: number; revenue: number }
+  >();
+
+  let grandUsd = 0;
+
+  for (const order of orders) {
+    for (const recipient of order.recipients) {
+      for (const line of recipient.products) {
+        const unit = Number(line.product.priceUsd);
+        const revenue = unit * line.quantity;
+        grandUsd += revenue;
+        const existing = productTotals.get(line.productId);
+        if (existing) {
+          existing.quantity += line.quantity;
+          existing.revenue += revenue;
+        } else {
+          productTotals.set(line.productId, {
+            name: line.product.name,
+            quantity: line.quantity,
+            unitPrice: unit,
+            revenue,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    orderCount: orders.length,
+    products: Array.from(productTotals.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    ),
+    totalUsd: Math.round(grandUsd * 100) / 100,
+    totalCny: Math.round(grandUsd * 6.8 * 100) / 100,
+    orders: orders.map((order) => ({
+      requestId: order.requestId,
+      status: order.status,
+      createdAt: order.createdAt,
+      formFillerName: order.formFillerName,
+    })),
+  };
 }
 
 export async function updateOrderAsAdmin(
@@ -238,27 +392,44 @@ export async function updateOrderAsAdmin(
     errors?: AdminErrorType[];
     adminEmail: string;
     adminId: string;
+    userEmail?: string;
+    unlinkUser?: boolean;
   },
 ) {
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.orderRequest.findUnique({
-      where: { requestId },
-    });
+  const previous = await prisma.orderRequest.findUnique({
+    where: { requestId },
+  });
+  if (!previous) {
+    throw new Error("Order not found");
+  }
 
-    if (!existing) {
-      throw new Error("Order not found");
+  const order = await prisma.$transaction(async (tx) => {
+    let userId: string | null | undefined = undefined;
+    if (payload.unlinkUser) {
+      userId = null;
+    } else if (payload.userEmail?.trim()) {
+      const user = await tx.user.findUnique({
+        where: { email: payload.userEmail.trim().toLowerCase() },
+      });
+      if (!user) {
+        throw new Error("No user found with that email");
+      }
+      userId = user.id;
     }
 
-    const order = await tx.orderRequest.update({
+    const updated = await tx.orderRequest.update({
       where: { requestId },
-      data: { status: payload.status },
+      data: {
+        status: payload.status,
+        ...(userId !== undefined ? { userId } : {}),
+      },
       include: orderDetailInclude,
     });
 
-    if (existing.status !== payload.status) {
+    if (previous.status !== payload.status) {
       await tx.orderStatusHistory.create({
         data: {
-          orderRequestId: order.id,
+          orderRequestId: updated.id,
           status: payload.status,
           changedBy: payload.adminEmail,
           note: payload.note ?? `Status changed to ${payload.status}`,
@@ -269,7 +440,7 @@ export async function updateOrderAsAdmin(
     if (payload.adminNote?.trim()) {
       await tx.adminNote.create({
         data: {
-          orderRequestId: order.id,
+          orderRequestId: updated.id,
           adminId: payload.adminId,
           content: payload.adminNote.trim(),
         },
@@ -278,13 +449,13 @@ export async function updateOrderAsAdmin(
 
     if (payload.errors) {
       await tx.orderAdminError.deleteMany({
-        where: { orderRequestId: order.id },
+        where: { orderRequestId: updated.id },
       });
 
       if (payload.errors.length > 0) {
         await tx.orderAdminError.createMany({
           data: payload.errors.map((errorType) => ({
-            orderRequestId: order.id,
+            orderRequestId: updated.id,
             errorType,
           })),
         });
@@ -296,6 +467,15 @@ export async function updateOrderAsAdmin(
       include: orderDetailInclude,
     });
   });
+
+  if (previous.status !== payload.status) {
+    const { notifyOrderStatusChange } = await import("@/lib/services/push");
+    void notifyOrderStatusChange(order.requestId, order.status, order.userId).catch(
+      (error) => console.error("[push] status notify failed", error),
+    );
+  }
+
+  return order;
 }
 
 export async function exportOrdersToCsv(filters: AdminOrderFilters) {

@@ -1,4 +1,5 @@
 import { createOrderRequest } from "@/lib/services/orders";
+import { getUserSessionFromCookies } from "@/lib/user-session";
 import { orderRequestSchema } from "@/lib/validations/order";
 import { NextResponse } from "next/server";
 
@@ -14,7 +15,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const order = await createOrderRequest(parsed.data);
+    const session = await getUserSessionFromCookies();
+    const order = await createOrderRequest(parsed.data, session?.userId);
 
     return NextResponse.json({
       requestId: order.requestId,

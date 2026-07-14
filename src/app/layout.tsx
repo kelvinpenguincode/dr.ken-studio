@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Inter } from "next/font/google";
+import { AccountBar } from "@/components/account/AccountBar";
 import "./globals.css";
 
 const inter = Inter({
@@ -25,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${cormorant.variable} h-full`}>
-      <body className="min-h-full font-sans text-foreground antialiased">{children}</body>
+      <body className="min-h-full font-sans text-foreground antialiased">
+        <AccountBar />
+        {children}
+      </body>
     </html>
   );
 }
