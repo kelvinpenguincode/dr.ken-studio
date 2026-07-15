@@ -72,13 +72,16 @@ export async function POST() {
             ? "InvalidProviderToken: APNS_KEY_ID, APNS_TEAM_ID, or APNS_PRIVATE_KEY is wrong. Key ID + Team ID are each 10 characters; paste the full .p8 including BEGIN/END lines; Key ID must belong to that .p8 file."
             : firstFailure?.reason === "BadEnvironmentKeyInToken"
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
-              : firstFailure?.reason?.includes("BadDeviceToken") ||
-                  firstFailure?.reason === "Unregistered" ||
-                  firstFailure?.reason === "Gone"
-                ? `BadDeviceToken after trying both APNs gateways. Check Vercel APNS_BUNDLE_ID is exactly the phone app’s Bundle ID (now “${result.bundleId}”), and that the APNs .p8 key belongs to the same Apple team as the app. Then Clear device tokens → phone Enable & sync → Send test push. Detail: ${firstFailure.reason}`
-                : firstFailure
-                  ? `APNs rejected the send: ${firstFailure.reason}`
-                  : "No device tokens registered yet.",
+              : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
+                  firstFailure?.reason?.includes("BadDeviceToken")
+                ? "Apple says this phone token is a SANDBOX (development) token, but sandbox also rejects it. Your TestFlight build almost certainly still has development push entitlements, OR Push Notifications is not enabled on the App ID in developer.apple.com. Delete the app from the phone, Archive a NEW Release build (confirm DrKenStudio.entitlements has aps-environment=production), upload to TestFlight, reinstall, then Clear tokens → Enable & sync → Send test push. Also verify App ID com.drkenstudio.drkenstudio has Push Notifications Enabled."
+                : firstFailure?.reason?.includes("BadDeviceToken") ||
+                    firstFailure?.reason === "Unregistered" ||
+                    firstFailure?.reason === "Gone"
+                  ? `BadDeviceToken after trying both APNs gateways. Check Vercel APNS_BUNDLE_ID is exactly the phone app’s Bundle ID (now “${result.bundleId}”), and that the APNs .p8 key belongs to the same Apple team as the app. Then Clear device tokens → phone Enable & sync → Send test push. Detail: ${firstFailure.reason}`
+                  : firstFailure
+                    ? `APNs rejected the send: ${firstFailure.reason}`
+                    : "No device tokens registered yet.",
     });
   } catch (err) {
     console.error("Test push failed", err);

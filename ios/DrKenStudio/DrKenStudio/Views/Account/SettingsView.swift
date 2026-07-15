@@ -33,6 +33,7 @@ struct SettingsView: View {
             Section("Notifications") {
                 LabeledContent("Permission", value: pushStatusLabel)
                 LabeledContent("App bundle", value: pushManager.appBundleId)
+                LabeledContent("Build", value: buildLabel)
                 if let token = pushManager.deviceToken {
                     Text("Apple token: \(token.prefix(12))… (\(token.count) hex chars)")
                         .font(.caption2)
@@ -66,7 +67,7 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("App bundle above must exactly match Vercel APNS_BUNDLE_ID. BadDeviceToken usually means mistyped Bundle ID — not that Apple “won’t rotate” the token (it often stays the same).")
+                Text("If push fails with BadEnvironmentKeyInToken@prod, this install is still a development/sandbox push build — delete the app and install a fresh TestFlight Release build.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -112,6 +113,20 @@ struct SettingsView: View {
         case .notDetermined: return "Not asked yet"
         @unknown default: return "Unknown"
         }
+    }
+
+    private var buildLabel: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        let channel: String
+        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
+            channel = "TestFlight/Sandbox receipt"
+        } else if Bundle.main.appStoreReceiptURL != nil {
+            channel = "App Store"
+        } else {
+            channel = "Dev/sideload"
+        }
+        return "\(version) (\(build)) · \(channel)"
     }
 
     private func bullet(_ text: String) -> some View {
