@@ -8,6 +8,9 @@ import Combine
 final class PushNotificationManager: NSObject, ObservableObject {
     static let shared = PushNotificationManager()
 
+    private static let tokenKey = "apnsDeviceToken"
+    private static let tokenEnvKey = "apnsDeviceTokenApsEnvironment"
+
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published var deviceToken: String?
     @Published var lastError: String?
@@ -17,11 +20,11 @@ final class PushNotificationManager: NSObject, ObservableObject {
     private var pendingRequestId: String?
     /// When forcing a refresh, ignore cached token until Apple delivers a new callback.
     private var awaitingFreshToken = false
-    private var tokenSeenAtRequest: String?
 
     private override init() {
         super.init()
-        if let saved = UserDefaults.standard.string(forKey: "apnsDeviceToken") {
+        migrateCachedTokenIfNeeded()
+        if let saved = UserDefaults.standard.string(forKey: Self.tokenKey) {
             deviceToken = saved
         }
     }
@@ -32,7 +35,30 @@ final class PushNotificationManager: NSObject, ObservableObject {
 
     func configure(api: APIClient) {
         self.api = api
+        migrateCachedTokenIfNeeded()
         refreshAuthorizationStatus()
+    }
+
+    /// TestFlight updates keep UserDefaults. A development token cached under a production
+    /// build will make APNs return BadEnvironmentKeyInToken forever.
+    private func migrateCachedTokenIfNeeded() {
+        let signedEnv = PushBuildDiagnostics.apsEnvironment
+        let cachedEnv = UserDefaults.standard.string(forKey: Self.tokenEnvKey)
+        if let cachedEnv, cachedEnv != signedEnv {
+            clearLocalTokenCache()
+            lastSyncMessage =
+                "Cleared old \(cachedEnv) push token (app is now \(signedEnv)). Tap Enable & sync."
+            return
+        }
+        // Production build with a token but no env stamp → treat as suspicious, clear it.
+        if signedEnv == "production",
+           UserDefaults.standard.string(forKey: Self.tokenKey) != nil,
+           cachedEnv == nil
+        {
+            clearLocalTokenCache()
+            lastSyncMessage =
+                "Cleared untagged cached push token. Tap Enable & sync for a fresh production token."
+        }
     }
 
     func refreshAuthorizationStatus() {
@@ -65,14 +91,14 @@ final class PushNotificationManager: NSObject, ObservableObject {
                 ? "Requesting fresh Apple device token…"
                 : "Waiting for Apple device token…"
             let token = try await waitForDeviceToken(
-                timeoutSeconds: 20,
+                timeoutSeconds: 25,
                 forceNewToken: forceNewToken
             )
             lastSyncMessage = "Saving token to server…"
             try await syncToken(token, watchRequestId: watchRequestId)
             pendingRequestId = nil
             lastSyncMessage =
-                "Registered with server · \(token.prefix(10))… (\(token.count) chars) · app \(appBundleId)"
+                "Registered with server · \(token.prefix(10))… (\(token.count) chars) · \(PushBuildDiagnostics.apsEnvironment) · \(appBundleId)"
             return true
         } catch {
             lastError = error.localizedDescription
@@ -84,7 +110,11 @@ final class PushNotificationManager: NSObject, ObservableObject {
     func handleDeviceToken(_ deviceTokenData: Data) {
         let token = deviceTokenData.map { String(format: "%02.2hhx", $0) }.joined()
         deviceToken = token
-        UserDefaults.standard.set(token, forKey: "apnsDeviceToken")
+        UserDefaults.standard.set(token, forKey: Self.tokenKey)
+        UserDefaults.standard.set(
+            PushBuildDiagnostics.apsEnvironment,
+            forKey: Self.tokenEnvKey
+        )
         awaitingFreshToken = false
 
         Task {
@@ -95,7 +125,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
                     || lastSyncMessage?.contains("Requesting fresh") == true
                 {
                     lastSyncMessage =
-                        "Registered with server · \(token.prefix(10))… (\(token.count) chars)"
+                        "Registered with server · \(token.prefix(10))… (\(token.count) chars) · \(PushBuildDiagnostics.apsEnvironment)"
                 }
                 pendingRequestId = nil
             } catch {
@@ -127,12 +157,13 @@ final class PushNotificationManager: NSObject, ObservableObject {
     }
 
     func watchOrder(_ requestId: String) async -> Bool {
-        await requestPermissionAndRegister(watchRequestId: requestId, forceNewToken: false)
+        await requestPermissionAndRegister(watchRequestId: requestId, forceNewToken: true)
     }
 
     func clearLocalTokenCache() {
         deviceToken = nil
-        UserDefaults.standard.removeObject(forKey: "apnsDeviceToken")
+        UserDefaults.standard.removeObject(forKey: Self.tokenKey)
+        UserDefaults.standard.removeObject(forKey: Self.tokenEnvKey)
         lastSyncMessage = "Cleared local Apple token cache"
     }
 
@@ -144,13 +175,12 @@ final class PushNotificationManager: NSObject, ObservableObject {
     }
 
     private func waitForDeviceToken(timeoutSeconds: Double, forceNewToken: Bool) async throws -> String {
-        tokenSeenAtRequest = deviceToken
-
         if forceNewToken {
-            // Drop cached value so we don't keep re-uploading a rejected BadDeviceToken.
+            // Never re-upload a cached development token under a production build.
+            clearLocalTokenCache()
             awaitingFreshToken = true
             UIApplication.shared.unregisterForRemoteNotifications()
-            try await Task.sleep(nanoseconds: 400_000_000)
+            try await Task.sleep(nanoseconds: 500_000_000)
             UIApplication.shared.registerForRemoteNotifications()
         } else {
             UIApplication.shared.registerForRemoteNotifications()
@@ -163,8 +193,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
         while Date() < deadline {
             if let token = deviceToken, !token.isEmpty {
                 if forceNewToken {
-                    // Accept callback even if Apple returns the same token string —
-                    // but only after we observed a registration callback (awaitingFreshToken cleared).
+                    // Only accept after didRegister callback cleared awaitingFreshToken.
                     if !awaitingFreshToken {
                         return token
                     }
@@ -175,15 +204,10 @@ final class PushNotificationManager: NSObject, ObservableObject {
             try await Task.sleep(nanoseconds: 250_000_000)
         }
 
-        // Fallback: if Apple didn't fire a new callback, use whatever we have
-        // (often the same token — that's OK once server gateway/bundle are correct).
-        if let token = deviceToken, !token.isEmpty {
-            awaitingFreshToken = false
-            return token
-        }
-
+        // Do NOT fall back to a stale cached token when forcing refresh.
+        awaitingFreshToken = false
         throw APIError.network(
-            "Apple did not return a push token. Use a physical iPhone (not Simulator), and confirm Push Notifications is enabled in Xcode → Signing & Capabilities. App bundle: \(appBundleId)"
+            "Apple did not return a fresh push token in time. Delete the app, reinstall from TestFlight, open More → Clear local token cache → Enable & sync. Signed push env: \(PushBuildDiagnostics.apsEnvironment), bundle: \(appBundleId)"
         )
     }
 

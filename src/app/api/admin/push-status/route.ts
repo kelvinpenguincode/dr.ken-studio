@@ -76,7 +76,7 @@ export async function POST() {
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
               : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
                   firstFailure?.reason?.includes("BadDeviceToken")
-                ? `Both APNs gateways rejected the token. Phone reported push env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". In the app More screen, “Push env (signed)” must be production for TestFlight (Certificates 0 is fine with .p8). Detail: ${firstFailure.reason}`
+                ? `Both APNs gateways rejected the token. Phone says signed env="${phoneEnv ?? "unknown"}" but Apple treated the token as the other environment — usually a STALE development token left in iPhone storage after a TestFlight update. Delete the app, install the newest TestFlight build, More → Clear local token cache → Enable & sync → Send test push. Detail: ${firstFailure.reason}`
                 : firstFailure?.reason?.includes("BadDeviceToken") ||
                     firstFailure?.reason === "Unregistered" ||
                     firstFailure?.reason === "Gone"
