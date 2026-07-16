@@ -61,6 +61,8 @@ export async function POST() {
   try {
     const result = await sendTestPushToAllDevices();
     const firstFailure = result.results.find((row) => !row.ok);
+    const phoneEnv = firstFailure?.apsEnvironment ?? result.results[0]?.apsEnvironment;
+    const phoneBundle = firstFailure?.bundleId ?? result.results[0]?.bundleId;
     return NextResponse.json({
       ...result,
       hint: result.sent > 0
@@ -74,7 +76,7 @@ export async function POST() {
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
               : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
                   firstFailure?.reason?.includes("BadDeviceToken")
-                ? "Apple says this phone token is a SANDBOX (development) token, but sandbox also rejects it. Your TestFlight build almost certainly still has development push entitlements, OR Push Notifications is not enabled on the App ID in developer.apple.com. Delete the app from the phone, Archive a NEW Release build (confirm DrKenStudio.entitlements has aps-environment=production), upload to TestFlight, reinstall, then Clear tokens → Enable & sync → Send test push. Also verify App ID com.drkenstudio.drkenstudio has Push Notifications Enabled."
+                ? `Both APNs gateways rejected the token. Phone reported push env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". In the app More screen, “Push env (signed)” must be production for TestFlight (Certificates 0 is fine with .p8). Detail: ${firstFailure.reason}`
                 : firstFailure?.reason?.includes("BadDeviceToken") ||
                     firstFailure?.reason === "Unregistered" ||
                     firstFailure?.reason === "Gone"

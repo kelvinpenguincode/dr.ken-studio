@@ -16,11 +16,27 @@ export type ApnsSendResult = {
   reason?: string;
 };
 
+function normalizeEnvString(raw: string | undefined | null): string {
+  if (!raw) return "";
+  let value = raw.trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  return value;
+}
+
+function apnsBundleId(): string {
+  return normalizeEnvString(process.env.APNS_BUNDLE_ID);
+}
+
 function isApnsConfigured(): boolean {
   return Boolean(
-    process.env.APNS_KEY_ID &&
-      process.env.APNS_TEAM_ID &&
-      process.env.APNS_BUNDLE_ID &&
+    normalizeEnvString(process.env.APNS_KEY_ID) &&
+      normalizeEnvString(process.env.APNS_TEAM_ID) &&
+      apnsBundleId() &&
       process.env.APNS_PRIVATE_KEY,
   );
 }
@@ -82,8 +98,8 @@ function getApnsJwt(): string {
     return cachedJwt.token;
   }
 
-  const keyId = process.env.APNS_KEY_ID!.trim();
-  const teamId = process.env.APNS_TEAM_ID!.trim();
+  const keyId = normalizeEnvString(process.env.APNS_KEY_ID);
+  const teamId = normalizeEnvString(process.env.APNS_TEAM_ID);
   const privateKeyPem = normalizeApnsPrivateKey(process.env.APNS_PRIVATE_KEY!);
 
   if (keyId.length !== 10) {
@@ -203,9 +219,9 @@ async function sendApnsOnce(
   deviceToken: string,
   payloadBody: string,
   production: boolean,
+  topic: string,
   options?: { deleteOnHardFail?: boolean },
 ): Promise<ApnsSendResult> {
-  const bundleId = process.env.APNS_BUNDLE_ID!.trim();
   const authority = apnsAuthority(production);
   const jwt = getApnsJwt();
 
@@ -214,7 +230,7 @@ async function sendApnsOnce(
     `/3/device/${deviceToken}`,
     {
       authorization: `bearer ${jwt}`,
-      "apns-topic": bundleId,
+      "apns-topic": topic,
       "apns-push-type": "alert",
       "apns-priority": "10",
       "content-type": "application/json",
@@ -236,7 +252,7 @@ async function sendApnsOnce(
       response.status,
       reason,
       "topic=",
-      bundleId,
+      topic,
       "host=",
       authority,
       "tokenLen=",
@@ -257,6 +273,7 @@ async function sendApnsOnce(
 async function sendApns(
   deviceToken: string,
   payload: PushPayload,
+  options?: { topic?: string | null; apsEnvironment?: string | null },
 ): Promise<ApnsSendResult> {
   if (!isApnsConfigured()) {
     console.warn("[push] APNs env vars not configured — skipping send");
@@ -275,13 +292,17 @@ async function sendApns(
     requestId: payload.requestId,
   });
 
-  // Prefer the configured gateway, but sandbox vs production device tokens differ.
-  // TestFlight = production; Xcode debug = sandbox.
-  // Retry opposite gateway for env mismatches (Apple often uses BadDeviceToken).
-  const preferredProduction = useProductionApns();
+  const topic =
+    normalizeEnvString(options?.topic) ||
+    apnsBundleId();
+
+  // Prefer gateway from the phone’s signed aps-environment when known.
+  let preferredProduction = useProductionApns();
+  if (options?.apsEnvironment === "development") preferredProduction = false;
+  if (options?.apsEnvironment === "production") preferredProduction = true;
 
   try {
-    const first = await sendApnsOnce(deviceToken, body, preferredProduction, {
+    const first = await sendApnsOnce(deviceToken, body, preferredProduction, topic, {
       deleteOnHardFail: false,
     });
     if (first.ok || !shouldRetryOppositeApnsEnvironment(first.reason)) {
@@ -301,16 +322,22 @@ async function sendApns(
       first.reason,
       "on",
       preferredProduction ? "production" : "sandbox",
+      "topic=",
+      topic,
       "— retrying opposite gateway",
     );
-    const second = await sendApnsOnce(deviceToken, body, !preferredProduction, {
-      deleteOnHardFail: false,
-    });
+    const second = await sendApnsOnce(
+      deviceToken,
+      body,
+      !preferredProduction,
+      topic,
+      { deleteOnHardFail: false },
+    );
     if (!second.ok) {
       await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
       return {
         ...second,
-        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"}`,
+        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"} (topic=${topic})`,
       };
     }
     return second;
@@ -330,6 +357,8 @@ export async function registerPushToken(input: {
   token: string;
   platform?: string;
   userId?: string | null;
+  bundleId?: string | null;
+  apsEnvironment?: string | null;
   /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
@@ -339,10 +368,24 @@ export async function registerPushToken(input: {
     throw new Error("Push token looks invalid (too short)");
   }
 
+  const bundleId = normalizeEnvString(input.bundleId) || null;
+  const apsEnvironment = normalizeEnvString(input.apsEnvironment) || null;
+  const expectedBundle = apnsBundleId();
+  if (bundleId && expectedBundle && bundleId !== expectedBundle) {
+    console.warn(
+      "[push] device bundleId",
+      bundleId,
+      "does not match APNS_BUNDLE_ID",
+      expectedBundle,
+    );
+  }
+
   return prisma.devicePushToken.upsert({
     where: { token },
     update: {
       platform: input.platform ?? "ios",
+      ...(bundleId ? { bundleId } : {}),
+      ...(apsEnvironment ? { apsEnvironment } : {}),
       ...(input.userId !== undefined ? { userId: input.userId } : {}),
       ...(input.watchRequestId !== undefined
         ? { watchRequestId: input.watchRequestId }
@@ -351,6 +394,8 @@ export async function registerPushToken(input: {
     create: {
       token,
       platform: input.platform ?? "ios",
+      bundleId,
+      apsEnvironment,
       userId: input.userId ?? null,
       watchRequestId: input.watchRequestId ?? null,
     },
@@ -416,7 +461,7 @@ export async function notifyOrderStatusChange(
     "production=",
     useProductionApns(),
     "bundle=",
-    process.env.APNS_BUNDLE_ID,
+    apnsBundleId(),
     "requestId=",
     requestId,
   );
@@ -424,7 +469,10 @@ export async function notifyOrderStatusChange(
   const results: ApnsSendResult[] = [];
   let sent = 0;
   for (const row of tokens) {
-    const result = await sendApns(row.token, payload);
+    const result = await sendApns(row.token, payload, {
+      topic: row.bundleId ?? apnsBundleId(),
+      apsEnvironment: row.apsEnvironment,
+    });
     results.push(result);
     if (result.ok) sent += 1;
   }
@@ -438,22 +486,34 @@ export async function sendTestPushToAllDevices() {
     title: "Test notification",
     body: "Dr. Ken Studio push is working.",
   };
-  const results: Array<ApnsSendResult & { tokenPrefix: string; tokenLen: number }> =
-    [];
+  const results: Array<
+    ApnsSendResult & {
+      tokenPrefix: string;
+      tokenLen: number;
+      bundleId: string | null;
+      apsEnvironment: string | null;
+    }
+  > = [];
   let sent = 0;
   for (const row of tokens) {
-    const result = await sendApns(row.token, payload);
+    const topic = row.bundleId || apnsBundleId();
+    const result = await sendApns(row.token, payload, {
+      topic,
+      apsEnvironment: row.apsEnvironment,
+    });
     results.push({
       ...result,
       tokenPrefix: row.token.slice(0, 12),
       tokenLen: row.token.length,
+      bundleId: row.bundleId,
+      apsEnvironment: row.apsEnvironment,
     });
     if (result.ok) sent += 1;
   }
   return {
     sent,
     attempted: tokens.length,
-    bundleId: process.env.APNS_BUNDLE_ID?.trim() ?? null,
+    bundleId: apnsBundleId() || null,
     production: useProductionApns(),
     results,
   };
@@ -463,9 +523,9 @@ export function getPushConfigStatus() {
   return {
     configured: isApnsConfigured(),
     production: useProductionApns(),
-    bundleId: process.env.APNS_BUNDLE_ID ?? null,
-    keyIdConfigured: Boolean(process.env.APNS_KEY_ID),
-    teamIdConfigured: Boolean(process.env.APNS_TEAM_ID),
+    bundleId: apnsBundleId() || null,
+    keyIdConfigured: Boolean(normalizeEnvString(process.env.APNS_KEY_ID)),
+    teamIdConfigured: Boolean(normalizeEnvString(process.env.APNS_TEAM_ID)),
     privateKeyConfigured: Boolean(process.env.APNS_PRIVATE_KEY),
     expectedBundleNote:
       "APNS_BUNDLE_ID must exactly match the iOS app Bundle Identifier in Xcode (Signing & Capabilities).",

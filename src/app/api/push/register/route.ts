@@ -7,6 +7,8 @@ const registerSchema = z.object({
   token: z.string().min(8, "Token is required"),
   platform: z.string().optional(),
   requestId: z.string().optional(),
+  bundleId: z.string().optional(),
+  apsEnvironment: z.string().optional(),
 });
 
 export async function POST(request: Request) {
@@ -23,6 +25,8 @@ export async function POST(request: Request) {
       token: parsed.data.token,
       platform: parsed.data.platform ?? "ios",
       userId: session?.userId ?? null,
+      bundleId: parsed.data.bundleId,
+      apsEnvironment: parsed.data.apsEnvironment,
       watchRequestId: hasRequestId
         ? String(body.requestId ?? "").trim() || null
         : undefined,
@@ -33,6 +37,8 @@ export async function POST(request: Request) {
       id: record.id,
       linkedUser: Boolean(session?.userId),
       watchRequestId: record.watchRequestId,
+      bundleId: record.bundleId,
+      apsEnvironment: record.apsEnvironment,
     });
   } catch (error) {
     console.error("Push register failed", error);

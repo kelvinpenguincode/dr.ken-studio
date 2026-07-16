@@ -117,6 +117,8 @@ final class APIClient {
         var body: [String: Any] = [
             "token": token,
             "platform": "ios",
+            "bundleId": Bundle.main.bundleIdentifier ?? "",
+            "apsEnvironment": PushBuildDiagnostics.apsEnvironment,
         ]
         if let requestId, !requestId.isEmpty {
             body["requestId"] = requestId

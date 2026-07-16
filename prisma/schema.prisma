@@ -75,6 +75,8 @@ model DevicePushToken {
   id             String   @id @default(cuid())
   token          String   @unique
   platform       String   @default("ios")
+  bundleId       String?  @map("bundle_id")
+  apsEnvironment String?  @map("aps_environment")
   userId         String?  @map("user_id")
   watchRequestId String?  @map("watch_request_id")
   createdAt      DateTime @default(now()) @map("created_at")

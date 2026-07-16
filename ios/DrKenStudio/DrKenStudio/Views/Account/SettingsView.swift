@@ -33,7 +33,17 @@ struct SettingsView: View {
             Section("Notifications") {
                 LabeledContent("Permission", value: pushStatusLabel)
                 LabeledContent("App bundle", value: pushManager.appBundleId)
-                LabeledContent("Build", value: buildLabel)
+                LabeledContent("Build", value: PushBuildDiagnostics.versionLabel)
+                LabeledContent("Push env (signed)", value: PushBuildDiagnostics.apsEnvironment)
+                if PushBuildDiagnostics.apsEnvironment == "development" {
+                    Text("This install is signed for DEVELOPMENT push. TestFlight Release must show “production”. Delete the app and archive a new Release/TestFlight build.")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                } else if PushBuildDiagnostics.apsEnvironment == "missing" {
+                    Text("aps-environment is missing — enable Push Notifications on the App ID + Xcode capability, then archive again.")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
                 if let token = pushManager.deviceToken {
                     Text("Apple token: \(token.prefix(12))… (\(token.count) hex chars)")
                         .font(.caption2)
@@ -67,7 +77,7 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                Text("If push fails with BadEnvironmentKeyInToken@prod, this install is still a development/sandbox push build — delete the app and install a fresh TestFlight Release build.")
+                Text("“Push env (signed)” must be production for TestFlight. App bundle must match Vercel APNS_BUNDLE_ID.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -113,20 +123,6 @@ struct SettingsView: View {
         case .notDetermined: return "Not asked yet"
         @unknown default: return "Unknown"
         }
-    }
-
-    private var buildLabel: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        let channel: String
-        if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
-            channel = "TestFlight/Sandbox receipt"
-        } else if Bundle.main.appStoreReceiptURL != nil {
-            channel = "App Store"
-        } else {
-            channel = "Dev/sideload"
-        }
-        return "\(version) (\(build)) · \(channel)"
     }
 
     private func bullet(_ text: String) -> some View {
