@@ -177,10 +177,9 @@ final class PushNotificationManager: NSObject, ObservableObject {
     private func waitForDeviceToken(timeoutSeconds: Double, forceNewToken: Bool) async throws -> String {
         if forceNewToken {
             // Never re-upload a cached development token under a production build.
+            // Do NOT call unregisterForRemoteNotifications() — it can leave APNs in a bad state.
             clearLocalTokenCache()
             awaitingFreshToken = true
-            UIApplication.shared.unregisterForRemoteNotifications()
-            try await Task.sleep(nanoseconds: 500_000_000)
             UIApplication.shared.registerForRemoteNotifications()
         } else {
             UIApplication.shared.registerForRemoteNotifications()
@@ -228,6 +227,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Request an APNs token early so Enable & sync does not rely on a stale cache.
+        application.registerForRemoteNotifications()
         return true
     }
 

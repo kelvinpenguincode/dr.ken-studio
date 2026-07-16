@@ -39,10 +39,10 @@ struct SettingsView: View {
                     Text("This install is signed for DEVELOPMENT push. TestFlight Release must show “production”. Delete the app and archive a new Release/TestFlight build.")
                         .font(.footnote)
                         .foregroundStyle(.red)
-                } else if PushBuildDiagnostics.apsEnvironment == "missing" {
-                    Text("aps-environment is missing — enable Push Notifications on the App ID + Xcode capability, then archive again.")
+                } else if PushBuildDiagnostics.apsEnvironment == "missing" || PushBuildDiagnostics.apsEnvironment.contains("unknown") {
+                    Text("Could not confirm push env from the binary. After Archive on the Mac, run ios/DrKenStudio/verify-push-entitlements.sh and confirm aps-environment = production before uploading.")
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.orange)
                 }
                 if let token = pushManager.deviceToken {
                     Text("Apple token: \(token.prefix(12))… (\(token.count) hex chars)")

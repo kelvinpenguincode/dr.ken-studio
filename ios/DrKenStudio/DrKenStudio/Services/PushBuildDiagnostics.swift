@@ -1,17 +1,22 @@
 import Foundation
 
-/// Best-effort diagnostics for the installed build’s push environment.
-/// Avoids macOS-only Security SecCode APIs (not available on iOS).
+/// Push-environment diagnostics for the installed build.
 enum PushBuildDiagnostics {
-    /// `development` or `production` from the signed profile / build config.
+    /// Prefer Info.plist build setting (always present), then mobileprovision if any.
     static var apsEnvironment: String {
+        if let fromInfo = Bundle.main.object(forInfoDictionaryKey: "DKPushAPSEnvironment") as? String,
+           !fromInfo.isEmpty
+        {
+            return fromInfo
+        }
         if let fromProfile = apsEnvironmentFromMobileProvision() {
             return fromProfile
         }
         #if DEBUG
         return "development"
         #else
-        return "production"
+        // TestFlight often has no embedded.mobileprovision — don't pretend we read production.
+        return "release-build-unknown"
         #endif
     }
 
@@ -28,7 +33,6 @@ enum PushBuildDiagnostics {
         return "\(version) (\(build)) · \(channel)"
     }
 
-    /// App Store / TestFlight / Ad Hoc builds include `embedded.mobileprovision`.
     private static func apsEnvironmentFromMobileProvision() -> String? {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
@@ -37,7 +41,6 @@ enum PushBuildDiagnostics {
             return nil
         }
 
-        // Provision profiles are CMS-wrapped; the plist sits inside as XML.
         guard let start = text.range(of: "<?xml"),
               let end = text.range(of: "</plist>")
         else {
