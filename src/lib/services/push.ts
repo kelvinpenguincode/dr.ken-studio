@@ -362,11 +362,11 @@ export async function registerPushToken(input: {
   /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
-  // APNs tokens are hex; normalize without destroying length
+  // APNs tokens are hex; length is not fixed forever (historically 64, sometimes longer).
   const token = input.token.trim().toLowerCase().replace(/[^0-9a-f]/g, "");
-  if (token.length !== 64 && token.length !== 128) {
+  if (token.length < 64 || token.length % 2 !== 0 || token.length > 256) {
     throw new Error(
-      `Push token length looks wrong (${token.length} chars). Expected 64 or 128 hex characters.`,
+      `Push token length looks wrong (${token.length} chars). Expected even-length hex, 64–256 characters.`,
     );
   }
 
