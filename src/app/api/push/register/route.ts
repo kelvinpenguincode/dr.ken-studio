@@ -43,20 +43,29 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("Push register failed", error);
     const message = error instanceof Error ? error.message : "";
+    if (message.includes("Push token length")) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
     if (
       message.includes("P2021") ||
       message.includes("P2022") ||
-      message.toLowerCase().includes("does not exist")
+      message.toLowerCase().includes("does not exist") ||
+      message.toLowerCase().includes("unknown column") ||
+      message.toLowerCase().includes("bundle_id") ||
+      message.toLowerCase().includes("aps_environment")
     ) {
       return NextResponse.json(
         {
           error:
-            "device_push_tokens table missing — run npx prisma db push (use DIRECT_URL)",
+            "Push DB schema is behind — run npx prisma db push with DIRECT_URL, then redeploy.",
         },
         { status: 500 },
       );
     }
-    return NextResponse.json({ error: "Failed to register push token" }, { status: 500 });
+    return NextResponse.json(
+      { error: message || "Failed to register push token" },
+      { status: 500 },
+    );
   }
 }
 
