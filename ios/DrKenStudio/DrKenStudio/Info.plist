@@ -8,6 +8,8 @@
 	<string>AppIcon</string>
 	<key>CFBundleName</key>
 	<string>DrKenStudio</string>
+	<key>DKPushAPSEnvironment</key>
+	<string>production</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

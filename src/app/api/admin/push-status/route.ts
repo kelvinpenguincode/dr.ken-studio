@@ -76,7 +76,7 @@ export async function POST() {
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
               : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
                   firstFailure?.reason?.includes("BadDeviceToken")
-                ? `Both APNs gateways rejected the token. Phone says signed env="${phoneEnv ?? "unknown"}" but Apple treated the token as the other environment — usually a STALE development token left in iPhone storage after a TestFlight update. Delete the app, install the newest TestFlight build, More → Clear local token cache → Enable & sync → Send test push. Detail: ${firstFailure.reason}`
+                ? `Apple still sees a sandbox device token. Do NOT trust the raw .xcarchive check. On the Mac run: bash ios/DrKenStudio/export-and-verify-ipa.sh — that builds a real .ipa. Only if that script prints production should you Upload to TestFlight. Then delete the app on the phone, install that build, Clear tokens, Enable & sync. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". Detail: ${firstFailure.reason}`
                 : firstFailure?.reason?.includes("BadDeviceToken") ||
                     firstFailure?.reason === "Unregistered" ||
                     firstFailure?.reason === "Gone"
