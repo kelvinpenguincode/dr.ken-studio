@@ -483,7 +483,11 @@ export async function notifyOrderStatusChange(
 }
 
 export async function sendTestPushToAllDevices() {
-  const tokens = await prisma.devicePushToken.findMany({ take: 20 });
+  // Newest token first — avoids an old Xcode/simulator token masking TestFlight failures.
+  const tokens = await prisma.devicePushToken.findMany({
+    take: 20,
+    orderBy: { updatedAt: "desc" },
+  });
   const payload: PushPayload = {
     title: "Test notification",
     body: "Dr. Ken Studio push is working.",

@@ -78,12 +78,19 @@ export async function POST() {
   try {
     const result = await sendTestPushToAllDevices();
     const firstFailure = result.results.find((row) => !row.ok);
+    const firstSuccess = result.results.find((row) => row.ok);
     const phoneEnv = firstFailure?.apsEnvironment ?? result.results[0]?.apsEnvironment;
     const phoneBundle = firstFailure?.bundleId ?? result.results[0]?.bundleId;
+    const resultSummary = result.results
+      .map(
+        (row) =>
+          `${row.ok ? "OK" : row.reason} · ${row.tokenLen}ch · ${row.tokenPrefix}…`,
+      )
+      .join(" | ");
     return NextResponse.json({
       ...result,
       hint: result.sent > 0
-        ? `Sent ${result.sent}/${result.attempted} test notification(s).`
+        ? `Sent ${result.sent}/${result.attempted}. Details: ${resultSummary}`
         : firstFailure?.reason === "TopicDisallowed" ||
             firstFailure?.reason === "DeviceTokenNotForTopic"
           ? `Bundle ID mismatch: APNS_BUNDLE_ID is “${result.bundleId}” but must match the app’s Bundle Identifier in Xcode exactly.`
@@ -93,7 +100,7 @@ export async function POST() {
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
               : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
                   firstFailure?.reason?.includes("BadDeviceToken")
-                ? `Apple still sees a sandbox device token. Do NOT trust the raw .xcarchive check. On the Mac run: bash ios/DrKenStudio/export-and-verify-ipa.sh — that builds a real .ipa. Only if that script prints production should you Upload to TestFlight. Then delete the app on the phone, install that build, Clear tokens, Enable & sync. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". Detail: ${firstFailure.reason}`
+                ? `Apple rejected this device token on both gateways (Mac test would too). This is not Vercel. Delete the TestFlight app, reboot the iPhone, reinstall ONLY from TestFlight, Clear tokens, sync — token must change. If Xcode/simulator still has the app, delete that too so only one install exists. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". Details: ${resultSummary}`
                 : firstFailure?.reason?.includes("BadDeviceToken") ||
                     firstFailure?.reason === "Unregistered" ||
                     firstFailure?.reason === "Gone"
@@ -101,6 +108,7 @@ export async function POST() {
                   : firstFailure
                     ? `APNs rejected the send: ${firstFailure.reason}`
                     : "No device tokens registered yet.",
+      firstSuccessTokenPrefix: firstSuccess?.tokenPrefix ?? null,
     });
   } catch (err) {
     console.error("Test push failed", err);
