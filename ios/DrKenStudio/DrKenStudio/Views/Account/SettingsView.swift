@@ -45,10 +45,17 @@ struct SettingsView: View {
                         .foregroundStyle(.orange)
                 }
                 if let token = pushManager.deviceToken {
-                    Text("Apple token: \(token.prefix(12))… (\(token.count) hex chars)")
+                    Text("Apple token (\(token.count) chars):")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    Text(token)
+                        .font(.system(.caption2, design: .monospaced))
                         .textSelection(.enabled)
+                    Button("Copy full Apple token") {
+                        UIPasteboard.general.string = token
+                        pushMessage = "Token copied — use with test-device-token.sh on the Mac"
+                        Haptics.light()
+                    }
                 } else {
                     Text("Apple token: not received yet")
                         .font(.caption2)

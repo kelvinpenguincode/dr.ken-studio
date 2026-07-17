@@ -334,10 +334,10 @@ async function sendApns(
       { deleteOnHardFail: false },
     );
     if (!second.ok) {
-      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
+      // Keep token for debugging — do not delete on environment mismatch.
       return {
         ...second,
-        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"} (topic=${topic})`,
+        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"} (topic=${topic}, tokenLen=${deviceToken.length}, token=${deviceToken.slice(0, 8)}…${deviceToken.slice(-8)})`,
       };
     }
     return second;
@@ -362,10 +362,12 @@ export async function registerPushToken(input: {
   /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
-  // APNs tokens are hex; strip junk so we never save a mangled value
+  // APNs tokens are hex; normalize without destroying length
   const token = input.token.trim().toLowerCase().replace(/[^0-9a-f]/g, "");
-  if (token.length < 64) {
-    throw new Error("Push token looks invalid (too short)");
+  if (token.length !== 64 && token.length !== 128) {
+    throw new Error(
+      `Push token length looks wrong (${token.length} chars). Expected 64 or 128 hex characters.`,
+    );
   }
 
   const bundleId = normalizeEnvString(input.bundleId) || null;
