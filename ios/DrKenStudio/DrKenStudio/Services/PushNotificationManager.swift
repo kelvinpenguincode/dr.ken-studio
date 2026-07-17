@@ -108,7 +108,10 @@ final class PushNotificationManager: NSObject, ObservableObject {
     }
 
     func handleDeviceToken(_ deviceTokenData: Data) {
-        let token = deviceTokenData.map { String(format: "%02.2hhx", $0) }.joined()
+        // Explicit byte hex — avoid format quirks with %02.2hhx under Release.
+        let token = deviceTokenData.map { byte in
+            String(format: "%02x", byte)
+        }.joined()
         deviceToken = token
         UserDefaults.standard.set(token, forKey: Self.tokenKey)
         UserDefaults.standard.set(
@@ -116,6 +119,12 @@ final class PushNotificationManager: NSObject, ObservableObject {
             forKey: Self.tokenEnvKey
         )
         awaitingFreshToken = false
+
+        #if targetEnvironment(simulator)
+        let deviceKind = "simulator"
+        #else
+        let deviceKind = "device"
+        #endif
 
         Task {
             do {
@@ -125,7 +134,7 @@ final class PushNotificationManager: NSObject, ObservableObject {
                     || lastSyncMessage?.contains("Requesting fresh") == true
                 {
                     lastSyncMessage =
-                        "Registered with server · \(token.prefix(10))… (\(token.count) chars) · \(PushBuildDiagnostics.apsEnvironment)"
+                        "Registered · \(token.prefix(10))… (\(token.count) chars, \(deviceTokenData.count) bytes, \(deviceKind)) · \(PushBuildDiagnostics.apsEnvironment)"
                 }
                 pendingRequestId = nil
             } catch {

@@ -52,6 +52,7 @@ export async function GET() {
       devices: devices.map((row) => ({
         token: row.token,
         tokenLen: row.token.length,
+        likelySimulator: row.token.length >= 150,
         bundleId: row.bundleId,
         apsEnvironment: row.apsEnvironment,
         updatedAt: row.updatedAt,
