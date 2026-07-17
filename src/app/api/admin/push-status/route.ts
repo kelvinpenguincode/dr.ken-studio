@@ -14,10 +14,20 @@ export async function GET() {
   const config = getPushConfigStatus();
 
   try {
-    const [tokenCount, linkedUsers, watchingOrders] = await Promise.all([
+    const [tokenCount, linkedUsers, watchingOrders, devices] = await Promise.all([
       prisma.devicePushToken.count(),
       prisma.devicePushToken.count({ where: { userId: { not: null } } }),
       prisma.devicePushToken.count({ where: { watchRequestId: { not: null } } }),
+      prisma.devicePushToken.findMany({
+        take: 10,
+        orderBy: { updatedAt: "desc" },
+        select: {
+          token: true,
+          bundleId: true,
+          apsEnvironment: true,
+          updatedAt: true,
+        },
+      }),
     ]);
 
     let hint = config.expectedBundleNote;
@@ -31,7 +41,7 @@ export async function GET() {
       hint =
         "APNs configured, but Devices is 0. On the phone: Enable & sync order alerts until it says Registered with server, then refresh.";
     } else {
-      hint = `Production APNs ready · topic ${config.bundleId}. Use “Send test push”. If you see BadDeviceToken, clear tokens and re-sync from the phone.`;
+      hint = `Production APNs ready · topic ${config.bundleId}. Use “Send test push”. Copy a full device token below for Mac test-device-token.sh if push fails.`;
     }
 
     return NextResponse.json({
@@ -39,6 +49,13 @@ export async function GET() {
       tokenCount,
       linkedUsers,
       watchingOrders,
+      devices: devices.map((row) => ({
+        token: row.token,
+        tokenLen: row.token.length,
+        bundleId: row.bundleId,
+        apsEnvironment: row.apsEnvironment,
+        updatedAt: row.updatedAt,
+      })),
       hint,
     });
   } catch (err) {

@@ -53,6 +53,12 @@ export function AdminTeamPanel({
     tokenCount: number;
     hint: string;
     bundleId: string | null;
+    devices?: Array<{
+      token: string;
+      tokenLen: number;
+      bundleId: string | null;
+      apsEnvironment: string | null;
+    }>;
   } | null>(null);
   const [pushBusy, setPushBusy] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
@@ -92,6 +98,12 @@ export function AdminTeamPanel({
           tokenCount: number;
           hint: string;
           bundleId: string | null;
+          devices?: Array<{
+            token: string;
+            tokenLen: number;
+            bundleId: string | null;
+            apsEnvironment: string | null;
+          }>;
         }>(pushRes);
         if (push) setPushStatus(push);
       }
@@ -252,6 +264,35 @@ export function AdminTeamPanel({
             {pushStatus.tokenCount}
             {pushStatus.bundleId ? ` · Bundle: ${pushStatus.bundleId}` : ""}
           </p>
+          {pushStatus.devices && pushStatus.devices.length > 0 ? (
+            <div className="space-y-2 rounded-lg border border-border bg-cream/40 p-3">
+              <p className="text-xs font-medium text-foreground">
+                Saved device tokens (copy for Mac test-device-token.sh)
+              </p>
+              {pushStatus.devices.map((device) => (
+                <div key={device.token} className="space-y-1">
+                  <p className="break-all font-mono text-[11px] text-foreground">
+                    {device.token}
+                  </p>
+                  <p className="text-[11px] text-muted">
+                    {device.tokenLen} chars
+                    {device.apsEnvironment ? ` · env ${device.apsEnvironment}` : ""}
+                    {device.bundleId ? ` · ${device.bundleId}` : ""}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(device.token);
+                      setMessage("Device token copied to clipboard");
+                    }}
+                  >
+                    Copy token
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <Button
             type="button"
             variant="secondary"
