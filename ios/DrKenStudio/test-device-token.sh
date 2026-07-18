@@ -97,8 +97,8 @@ send() {
   local BODY_FILE
   BODY_FILE=$(mktemp)
   echo "=== $LABEL ($HOST) — fresh curl connection ==="
-  # --http2-prior-knowledge avoided; each invoke is a new connection.
-  curl -sS --http2 --http1.1 \
+  # APNs requires HTTP/2. Do not pass --http1.1 (breaks negotiation → HTTP/0.9 error).
+  curl -sS --http2 \
     -o "$BODY_FILE" \
     -w "HTTP %{http_code}\n" \
     -X POST "https://${HOST}/3/device/${TOKEN}" \
