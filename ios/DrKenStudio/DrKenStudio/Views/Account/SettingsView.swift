@@ -36,11 +36,17 @@ struct SettingsView: View {
                 LabeledContent("Build", value: PushBuildDiagnostics.versionLabel)
                 LabeledContent("Push env (signed)", value: PushBuildDiagnostics.apsEnvironment)
                 if PushBuildDiagnostics.apsEnvironment == "development" {
-                    Text("This install is signed for DEVELOPMENT push. TestFlight Release must show “production”. Delete the app and archive a new Release/TestFlight build.")
+                    Text("CODESIGN says DEVELOPMENT — Apple will only mint sandbox tokens. Reinstalling won’t help. On Mac: export App Store IPA → bash verify-push-entitlements.sh Your.ipa → must say production → upload THAT IPA only.")
                         .font(.footnote)
                         .foregroundStyle(.red)
-                } else if PushBuildDiagnostics.apsEnvironment == "missing" || PushBuildDiagnostics.apsEnvironment.contains("unknown") {
-                    Text("Could not confirm push env from the binary. After Archive on the Mac, run ios/DrKenStudio/verify-push-entitlements.sh and confirm aps-environment = production before uploading.")
+                } else if PushBuildDiagnostics.apsEnvironment.contains("unknown") {
+                    Text("Could not read codesign aps-environment. On Mac verify the IPA before another upload.")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                } else if PushBuildDiagnostics.apsEnvironment == "production",
+                          !PushBuildDiagnostics.isTestFlightInstall
+                {
+                    Text("Production entitlement but not a TestFlight/App Store receipt — confirm install source.")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 }

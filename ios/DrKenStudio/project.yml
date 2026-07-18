@@ -13,7 +13,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     # Use the explicit Info.plist only — do not also auto-generate one
     # (avoids "Multiple commands produce Info.plist")
-    GENERATE_INFOPLIST_FILE: NO
+    GENERATE_INFOPLIST_FILE: YES
     PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
 targets:
   DrKenStudio:
@@ -28,7 +28,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
         INFOPLIST_FILE: DrKenStudio/Info.plist
+        INFOPLIST_EXPAND_BUILD_SETTINGS: YES
         INFOPLIST_KEY_CFBundleDisplayName: Dr. Ken Studio
+      configs:
+        Debug:
+          DK_PUSH_APS_ENV: development
+          CODE_SIGN_ENTITLEMENTS: DrKenStudio/DrKenStudioDebug.entitlements
+        Release:
+          DK_PUSH_APS_ENV: production
+          CODE_SIGN_ENTITLEMENTS: DrKenStudio/DrKenStudio.entitlements
     info:
       path: DrKenStudio/Info.plist
       properties:

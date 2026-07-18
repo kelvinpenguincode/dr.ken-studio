@@ -28,6 +28,9 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- Expanded from DK_PUSH_APS_ENV build setting (development / production). -->
+	<key>DKPushAPSEnvironment</key>
+	<string>$(DK_PUSH_APS_ENV)</string>
 	<!-- Allow connecting to your HTTPS Vercel/Supabase-backed API. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
