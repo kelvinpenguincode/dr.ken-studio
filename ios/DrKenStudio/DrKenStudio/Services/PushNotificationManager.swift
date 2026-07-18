@@ -185,37 +185,50 @@ final class PushNotificationManager: NSObject, ObservableObject {
 
     private func waitForDeviceToken(timeoutSeconds: Double, forceNewToken: Bool) async throws -> String {
         if forceNewToken {
-            // Never re-upload a cached development token under a production build.
-            // Do NOT call unregisterForRemoteNotifications() — it can leave APNs in a bad state.
+            let previous = deviceToken
+            // iOS often re-delivers a cached sandbox token even after a production reinstall.
+            // unregister forces the system to drop the app from APNs before we ask again.
             clearLocalTokenCache()
+            UIApplication.shared.unregisterForRemoteNotifications()
+            try await Task.sleep(nanoseconds: 2_000_000_000)
             awaitingFreshToken = true
             UIApplication.shared.registerForRemoteNotifications()
-        } else {
-            UIApplication.shared.registerForRemoteNotifications()
-            if let existing = deviceToken, !existing.isEmpty {
-                return existing
+
+            let deadline = Date().addingTimeInterval(timeoutSeconds)
+            while Date() < deadline {
+                if let token = deviceToken, !token.isEmpty, !awaitingFreshToken {
+                    if let previous, previous == token,
+                       PushBuildDiagnostics.apsEnvironment == "production"
+                    {
+                        lastSyncMessage =
+                            "Apple returned the SAME token (\(token.prefix(8))…). That hex is already rejected by APNs. On iPhone: Settings → General → Transfer or Reset iPhone → Reset → Reset Network Settings, then reopen the app and Enable & sync. Or test on a different iPhone. Do not keep reinstalling."
+                    }
+                    return token
+                }
+                try await Task.sleep(nanoseconds: 250_000_000)
             }
+
+            awaitingFreshToken = false
+            throw APIError.network(
+                "Apple did not return a push token in time. Signed push env: \(PushBuildDiagnostics.apsEnvironment), bundle: \(appBundleId)"
+            )
+        }
+
+        UIApplication.shared.registerForRemoteNotifications()
+        if let existing = deviceToken, !existing.isEmpty {
+            return existing
         }
 
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if let token = deviceToken, !token.isEmpty {
-                if forceNewToken {
-                    // Only accept after didRegister callback cleared awaitingFreshToken.
-                    if !awaitingFreshToken {
-                        return token
-                    }
-                } else {
-                    return token
-                }
+                return token
             }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
 
-        // Do NOT fall back to a stale cached token when forcing refresh.
-        awaitingFreshToken = false
         throw APIError.network(
-            "Apple did not return a fresh push token in time. Delete the app, reinstall from TestFlight, open More → Clear local token cache → Enable & sync. Signed push env: \(PushBuildDiagnostics.apsEnvironment), bundle: \(appBundleId)"
+            "Apple did not return a push token in time. Signed push env: \(PushBuildDiagnostics.apsEnvironment), bundle: \(appBundleId)"
         )
     }
 

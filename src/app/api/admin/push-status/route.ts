@@ -101,7 +101,9 @@ export async function POST() {
               ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
               : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
                   firstFailure?.reason?.includes("BadDeviceToken")
-                ? `Apple rejected this device token on both gateways (Mac test would too). This is not Vercel. Delete the TestFlight app, reboot the iPhone, reinstall ONLY from TestFlight, Clear tokens, sync — token must change. If Xcode/simulator still has the app, delete that too so only one install exists. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". Details: ${resultSummary}`
+                ? phoneEnv === "production"
+                  ? `Push env is production but Apple still rejects token ${firstFailure.tokenPrefix}… as sandbox/poisoned (same hex often comes back after reinstall). This token string will never work. On the iPhone: Settings → General → Transfer or Reset iPhone → Reset → Reset Network Settings, reopen app → Clear tokens in Admin → Enable & sync — the token prefix MUST change from ${firstFailure.tokenPrefix}. Or use a different iPhone. Details: ${resultSummary}`
+                  : `Apple rejected this device token on both gateways (Mac test would too). This is not Vercel. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". If env is not production, the IPA is wrong. If env is production and the token hex never changes, Reset Network Settings on the iPhone (or another phone). Details: ${resultSummary}`
                 : firstFailure?.reason?.includes("BadDeviceToken") ||
                     firstFailure?.reason === "Unregistered" ||
                     firstFailure?.reason === "Gone"
