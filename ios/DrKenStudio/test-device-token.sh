@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Test one device token against Apple directly (bypasses Vercel).
+# Test one device token against Apple (fresh curl connection per host).
 # Usage:
 #   bash test-device-token.sh \
 #     --key-id YOUR_KEY_ID \
 #     --team-id YOUR_TEAM_ID \
 #     --p8 /path/to/AuthKey_XXX.p8 \
 #     --bundle com.drkenstudio.orders \
-#     --token PASTE_FULL_HEX_TOKEN_FROM_PHONE
+#     --token PASTE_FULL_HEX_TOKEN \
+#     [--sandbox]          # also hit sandbox on a separate connection
 #
 # Requires: openssl, python3, curl with HTTP/2
 
@@ -17,6 +18,7 @@ TEAM_ID=""
 P8=""
 BUNDLE="com.drkenstudio.orders"
 TOKEN=""
+ALSO_SANDBOX=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --p8) P8="$2"; shift 2 ;;
     --bundle) BUNDLE="$2"; shift 2 ;;
     --token) TOKEN="$2"; shift 2 ;;
+    --sandbox) ALSO_SANDBOX=1; shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -65,9 +68,7 @@ subprocess.check_call([
     "openssl", "dgst", "-sha256", "-sign", key_path, "-out", sig_path, msg_path
 ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-# Convert DER ECDSA signature to raw R||S (IEEE P1363) for JWT
 der = open(sig_path, "rb").read()
-# Minimal DER parse for SEQUENCE { INT r, INT s }
 assert der[0] == 0x30
 def read_int(buf, i):
     assert buf[i] == 0x02
@@ -76,7 +77,7 @@ def read_int(buf, i):
     return val, i+2+ln
 i = 2
 if der[1] & 0x80:
-    i = 3  # long form length — uncommon for these sigs; keep simple
+    i = 3
 r, i = read_int(der, i)
 s, i = read_int(der, i)
 r = r.lstrip(b"\x00").rjust(32, b"\x00")[-32:]
@@ -91,9 +92,12 @@ PAYLOAD='{"aps":{"alert":{"title":"Mac APNs test","body":"Direct from your Mac"}
 send() {
   local HOST="$1"
   local LABEL="$2"
-  echo "=== $LABEL ($HOST) ==="
-  curl -sS --http2 \
-    -o /tmp/apns-body.txt \
+  local BODY_FILE
+  BODY_FILE=$(mktemp)
+  echo "=== $LABEL ($HOST) — fresh curl connection ==="
+  # --http2-prior-knowledge avoided; each invoke is a new connection.
+  curl -sS --http2 --http1.1 \
+    -o "$BODY_FILE" \
     -w "HTTP %{http_code}\n" \
     -X POST "https://${HOST}/3/device/${TOKEN}" \
     -H "authorization: bearer ${JWT}" \
@@ -102,15 +106,19 @@ send() {
     -H "apns-priority: 10" \
     -H "content-type: application/json" \
     --data "$PAYLOAD" || true
-  echo "Body: $(cat /tmp/apns-body.txt)"
+  echo "Body: $(cat "$BODY_FILE")"
+  rm -f "$BODY_FILE"
   echo ""
 }
 
+# Production only by default (TestFlight). Optional second host on a NEW connection.
 send "api.push.apple.com" "PRODUCTION"
-send "api.sandbox.push.apple.com" "SANDBOX"
+if [[ "$ALSO_SANDBOX" -eq 1 ]]; then
+  send "api.sandbox.push.apple.com" "SANDBOX"
+fi
 
 echo "Interpretation:"
-echo "  production OK            → token is production (TestFlight/App Store)"
-echo "  sandbox OK               → token is development (Xcode debug)"
-echo "  BadEnvironmentKeyInToken on production → Apple thinks token is sandbox"
-echo "  BadDeviceToken on both   → token string is wrong/corrupt, or topic/key mismatch"
+echo "  production HTTP 200 → TestFlight/App Store token OK"
+echo "  BadEnvironmentKeyInToken → Apple classifies this token as sandbox"
+echo "  BadDeviceToken → bad token / topic / key mismatch"
+echo "  Use --sandbox only if debugging a Xcode debug build"

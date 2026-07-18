@@ -36,12 +36,11 @@ export async function GET() {
         "Add APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, and APNS_PRIVATE_KEY on Vercel, then redeploy.";
     } else if (!config.production) {
       hint =
-        "Using sandbox APNs — TestFlight builds will not receive pushes. Set APNS_PRODUCTION=true.";
+        "Using sandbox APNs. For TestFlight set APNS_PRODUCTION=true and redeploy.";
     } else if (tokenCount === 0) {
-      hint =
-        "APNs configured, but Devices is 0. On the phone: Enable & sync order alerts until it says Registered with server, then refresh.";
+      hint = "No device tokens yet. On the phone: Enable & sync, then refresh.";
     } else {
-      hint = `Production APNs ready · topic ${config.bundleId}. Use “Send test push”. Copy a full device token below for Mac test-device-token.sh if push fails.`;
+      hint = `Ready · topic ${config.bundleId} · production=${config.production}`;
     }
 
     return NextResponse.json({
@@ -66,8 +65,7 @@ export async function GET() {
       tokenCount: 0,
       linkedUsers: 0,
       watchingOrders: 0,
-      hint:
-        "Could not read device_push_tokens — run npx prisma db push (with DIRECT_URL), then confirm APNs env vars on Vercel.",
+      hint: "Could not read device_push_tokens — run npx prisma db push.",
     });
   }
 }
@@ -80,37 +78,33 @@ export async function POST() {
     const result = await sendTestPushToAllDevices();
     const firstFailure = result.results.find((row) => !row.ok);
     const firstSuccess = result.results.find((row) => row.ok);
-    const phoneEnv = firstFailure?.apsEnvironment ?? result.results[0]?.apsEnvironment;
-    const phoneBundle = firstFailure?.bundleId ?? result.results[0]?.bundleId;
-    const resultSummary = result.results
+    const summary = result.results
       .map(
         (row) =>
-          `${row.ok ? "OK" : row.reason} · ${row.tokenLen}ch · ${row.tokenPrefix}…`,
+          `${row.ok ? "OK" : row.reason} @ ${row.host ?? "?"} · ${row.tokenLen}ch · ${row.tokenPrefix}…`,
       )
       .join(" | ");
+
+    let hint: string;
+    if (result.sent > 0) {
+      hint = `Sent ${result.sent}/${result.attempted}. ${summary}`;
+    } else if (!firstFailure) {
+      hint = "No device tokens registered yet.";
+    } else if (
+      firstFailure.reason === "TopicDisallowed" ||
+      firstFailure.reason === "DeviceTokenNotForTopic"
+    ) {
+      hint = `Topic mismatch. Vercel APNS_BUNDLE_ID="${result.bundleId}" must match the phone app bundle.`;
+    } else if (firstFailure.reason === "InvalidProviderToken") {
+      hint =
+        "InvalidProviderToken: check APNS_KEY_ID, APNS_TEAM_ID, and APNS_PRIVATE_KEY (.p8).";
+    } else {
+      hint = `APNs: ${firstFailure.reason} (host ${firstFailure.host ?? "?"}). Phone env=${firstFailure.apsEnvironment ?? "?"} bundle=${firstFailure.bundleId ?? result.bundleId}. ${summary}`;
+    }
+
     return NextResponse.json({
       ...result,
-      hint: result.sent > 0
-        ? `Sent ${result.sent}/${result.attempted}. Details: ${resultSummary}`
-        : firstFailure?.reason === "TopicDisallowed" ||
-            firstFailure?.reason === "DeviceTokenNotForTopic"
-          ? `Bundle ID mismatch: APNS_BUNDLE_ID is “${result.bundleId}” but must match the app’s Bundle Identifier in Xcode exactly.`
-          : firstFailure?.reason === "InvalidProviderToken"
-            ? "InvalidProviderToken: APNS_KEY_ID, APNS_TEAM_ID, or APNS_PRIVATE_KEY is wrong. Key ID + Team ID are each 10 characters; paste the full .p8 including BEGIN/END lines; Key ID must belong to that .p8 file."
-            : firstFailure?.reason === "BadEnvironmentKeyInToken"
-              ? "BadEnvironmentKeyInToken: phone token is sandbox but server used production (or reverse). For TestFlight set APNS_PRODUCTION=true, reinstall/enable alerts again, then retry."
-              : firstFailure?.reason?.includes("BadEnvironmentKeyInToken") &&
-                  firstFailure?.reason?.includes("BadDeviceToken")
-                ? phoneEnv === "production"
-                  ? `Push env is production but Apple still rejects token ${firstFailure.tokenPrefix}… as sandbox/poisoned (same hex often comes back after reinstall). This token string will never work. On the iPhone: Settings → General → Transfer or Reset iPhone → Reset → Reset Network Settings, reopen app → Clear tokens in Admin → Enable & sync — the token prefix MUST change from ${firstFailure.tokenPrefix}. Or use a different iPhone. Details: ${resultSummary}`
-                  : `Apple rejected this device token on both gateways (Mac test would too). This is not Vercel. Phone env="${phoneEnv ?? "unknown"}" bundle="${phoneBundle ?? result.bundleId}". If env is not production, the IPA is wrong. If env is production and the token hex never changes, Reset Network Settings on the iPhone (or another phone). Details: ${resultSummary}`
-                : firstFailure?.reason?.includes("BadDeviceToken") ||
-                    firstFailure?.reason === "Unregistered" ||
-                    firstFailure?.reason === "Gone"
-                  ? `BadDeviceToken after trying both APNs gateways. Check Vercel APNS_BUNDLE_ID is exactly the phone app’s Bundle ID (now “${result.bundleId}”), and that the APNs .p8 key belongs to the same Apple team as the app. Then Clear device tokens → phone Enable & sync → Send test push. Detail: ${firstFailure.reason}`
-                  : firstFailure
-                    ? `APNs rejected the send: ${firstFailure.reason}`
-                    : "No device tokens registered yet.",
+      hint,
       firstSuccessTokenPrefix: firstSuccess?.tokenPrefix ?? null,
     });
   } catch (err) {
@@ -128,7 +122,7 @@ export async function DELETE() {
     return NextResponse.json({
       ok: true,
       deleted: result.deleted,
-      hint: `Cleared ${result.deleted} device token(s). On the phone: More → Enable & sync order alerts, then refresh this page.`,
+      hint: `Cleared ${result.deleted} token(s). Phone → Enable & sync, then retry.`,
     });
   } catch (err) {
     console.error("Clear push tokens failed", err);

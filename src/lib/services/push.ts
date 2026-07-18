@@ -1,3 +1,12 @@
+/**
+ * APNs push — rewritten clean.
+ *
+ * Rules (from APNs HTTP/2 footguns):
+ * - One brand-new HTTP/2 connection per notification
+ * - Destroy the session before the next send (never reuse after errors)
+ * - One gateway only — no “retry the other environment” on the same flow
+ * - Topic = APNS_BUNDLE_ID (must match the app’s bundle id)
+ */
 import { createPrivateKey, createSign } from "crypto";
 import { connect as http2Connect, type ClientHttp2Session } from "http2";
 import { prisma } from "@/lib/prisma";
@@ -14,9 +23,10 @@ export type ApnsSendResult = {
   ok: boolean;
   status?: number;
   reason?: string;
+  host?: string;
 };
 
-function normalizeEnvString(raw: string | undefined | null): string {
+function trimEnv(raw: string | undefined | null): string {
   if (!raw) return "";
   let value = raw.trim();
   if (
@@ -28,44 +38,32 @@ function normalizeEnvString(raw: string | undefined | null): string {
   return value;
 }
 
-function apnsBundleId(): string {
-  return normalizeEnvString(process.env.APNS_BUNDLE_ID);
+function bundleId(): string {
+  return trimEnv(process.env.APNS_BUNDLE_ID);
 }
 
 function isApnsConfigured(): boolean {
   return Boolean(
-    normalizeEnvString(process.env.APNS_KEY_ID) &&
-      normalizeEnvString(process.env.APNS_TEAM_ID) &&
-      apnsBundleId() &&
+    trimEnv(process.env.APNS_KEY_ID) &&
+      trimEnv(process.env.APNS_TEAM_ID) &&
+      bundleId() &&
       process.env.APNS_PRIVATE_KEY,
   );
 }
 
-/** TestFlight / App Store need production APNs. Debug builds use sandbox. */
-function useProductionApns(): boolean {
+/** TestFlight / App Store → production. Xcode debug → set APNS_PRODUCTION=false. */
+function useProductionApns(apsEnvironment?: string | null): boolean {
+  if (apsEnvironment === "development") return false;
+  if (apsEnvironment === "production") return true;
   if (process.env.APNS_PRODUCTION === "true") return true;
   if (process.env.APNS_PRODUCTION === "false") return false;
   return process.env.VERCEL_ENV === "production";
 }
 
-let cachedJwt: { token: string; exp: number } | null = null;
-
-/** Normalize a .p8 key pasted into Vercel (quoted, \\n, spaces, etc.). */
-function normalizeApnsPrivateKey(raw: string): string {
-  let key = raw.trim();
-
-  // Strip wrapping quotes from env UIs
-  if (
-    (key.startsWith('"') && key.endsWith('"')) ||
-    (key.startsWith("'") && key.endsWith("'"))
-  ) {
-    key = key.slice(1, -1);
-  }
-
-  // Handle escaped newlines from dashboards
+function normalizePrivateKey(raw: string): string {
+  let key = trimEnv(raw);
   key = key.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
 
-  // If someone pasted the key as one long line without breaks, rebuild PEM
   if (!key.includes("\n") && key.includes("-----BEGIN PRIVATE KEY-----")) {
     key = key
       .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
@@ -88,26 +86,18 @@ function normalizeApnsPrivateKey(raw: string): string {
       "APNS_PRIVATE_KEY must include -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----",
     );
   }
-
   return key;
 }
 
-function getApnsJwt(): string {
+let cachedJwt: { token: string; exp: number } | null = null;
+
+function makeJwt(): string {
   const now = Math.floor(Date.now() / 1000);
-  if (cachedJwt && cachedJwt.exp > now + 60) {
-    return cachedJwt.token;
-  }
+  if (cachedJwt && cachedJwt.exp > now + 60) return cachedJwt.token;
 
-  const keyId = normalizeEnvString(process.env.APNS_KEY_ID);
-  const teamId = normalizeEnvString(process.env.APNS_TEAM_ID);
-  const privateKeyPem = normalizeApnsPrivateKey(process.env.APNS_PRIVATE_KEY!);
-
-  if (keyId.length !== 10) {
-    console.warn("[push] APNS_KEY_ID should be 10 characters, got", keyId.length);
-  }
-  if (teamId.length !== 10) {
-    console.warn("[push] APNS_TEAM_ID should be 10 characters, got", teamId.length);
-  }
+  const keyId = trimEnv(process.env.APNS_KEY_ID);
+  const teamId = trimEnv(process.env.APNS_TEAM_ID);
+  const pem = normalizePrivateKey(process.env.APNS_PRIVATE_KEY!);
 
   const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: keyId })).toString(
     "base64url",
@@ -117,7 +107,7 @@ function getApnsJwt(): string {
   );
   const unsigned = `${header}.${claims}`;
 
-  const key = createPrivateKey(privateKeyPem);
+  const key = createPrivateKey(pem);
   const signer = createSign("SHA256");
   signer.update(unsigned);
   signer.end();
@@ -130,74 +120,112 @@ function getApnsJwt(): string {
   return token;
 }
 
-function apnsAuthority(production: boolean): string {
+function hostFor(production: boolean): string {
   return production
     ? "https://api.push.apple.com"
     : "https://api.sandbox.push.apple.com";
 }
 
-/** APNs requires HTTP/2 — Node fetch/undici often fails with "fetch failed". */
-function http2Request(
+function destroySession(client: ClientHttp2Session | null): Promise<void> {
+  if (!client) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => resolve();
+    const timer = setTimeout(() => {
+      try {
+        client.destroy();
+      } catch {
+        /* ignore */
+      }
+      done();
+    }, 500);
+    try {
+      client.close(() => {
+        clearTimeout(timer);
+        try {
+          client.destroy();
+        } catch {
+          /* ignore */
+        }
+        done();
+      });
+    } catch {
+      clearTimeout(timer);
+      try {
+        client.destroy();
+      } catch {
+        /* ignore */
+      }
+      done();
+    }
+  });
+}
+
+/** Fresh TCP/HTTP2 session → one POST → destroy. Never reuse the session. */
+function postOnce(
   authority: string,
-  path: string,
+  deviceToken: string,
   headers: Record<string, string>,
   body: string,
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     let client: ClientHttp2Session | null = null;
+    let settled = false;
+
+    const finish = async (
+      err: Error | null,
+      result?: { status: number; body: string },
+    ) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      await destroySession(client);
+      if (err) reject(err);
+      else resolve(result!);
+    };
+
     const timer = setTimeout(() => {
-      client?.close();
-      reject(new Error("APNs HTTP/2 request timed out"));
+      void finish(new Error("APNs HTTP/2 request timed out"));
     }, 15000);
 
     try {
+      // No agent / no pooling — new connection every call.
       client = http2Connect(authority);
     } catch (error) {
-      clearTimeout(timer);
-      reject(error);
+      void finish(error instanceof Error ? error : new Error(String(error)));
       return;
     }
 
     client.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
+      void finish(error);
     });
 
     const req = client.request({
       ":method": "POST",
-      ":path": path,
+      ":path": `/3/device/${deviceToken}`,
       ...headers,
     });
 
-    let responseStatus = 0;
+    let status = 0;
     let responseBody = "";
 
     req.on("response", (responseHeaders) => {
-      responseStatus = Number(responseHeaders[":status"] ?? 0);
+      status = Number(responseHeaders[":status"] ?? 0);
     });
-
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
       responseBody += chunk;
     });
-
     req.on("end", () => {
-      clearTimeout(timer);
-      client?.close();
-      resolve({ status: responseStatus, body: responseBody });
+      void finish(null, { status, body: responseBody });
     });
-
     req.on("error", (error) => {
-      clearTimeout(timer);
-      client?.close();
-      reject(error);
+      void finish(error);
     });
-
     req.end(body);
   });
 }
 
-function parseApnsReason(body: string, status: number): string {
+function parseReason(body: string, status: number): string {
   if (!body) return `HTTP ${status}`;
   try {
     return (JSON.parse(body) as { reason?: string }).reason ?? body;
@@ -206,149 +234,73 @@ function parseApnsReason(body: string, status: number): string {
   }
 }
 
-function shouldRetryOppositeApnsEnvironment(reason?: string): boolean {
-  // Apple often returns BadDeviceToken (not only BadEnvironmentKeyInToken)
-  // when a sandbox token is sent to production or the reverse.
-  return (
-    reason === "BadEnvironmentKeyInToken" ||
-    reason === "BadDeviceToken"
-  );
-}
-
-async function sendApnsOnce(
-  deviceToken: string,
-  payloadBody: string,
-  production: boolean,
-  topic: string,
-  options?: { deleteOnHardFail?: boolean },
-): Promise<ApnsSendResult> {
-  const authority = apnsAuthority(production);
-  const jwt = getApnsJwt();
-
-  const response = await http2Request(
-    authority,
-    `/3/device/${deviceToken}`,
-    {
-      authorization: `bearer ${jwt}`,
-      "apns-topic": topic,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-      "content-type": "application/json",
-    },
-    payloadBody,
-  );
-
-  if (response.status === 410) {
-    if (options?.deleteOnHardFail !== false) {
-      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-    }
-    return { ok: false, status: 410, reason: "Gone" };
-  }
-
-  if (response.status < 200 || response.status >= 300) {
-    const reason = parseApnsReason(response.body, response.status);
-    console.error(
-      "[push] APNs error",
-      response.status,
-      reason,
-      "topic=",
-      topic,
-      "host=",
-      authority,
-      "tokenLen=",
-      deviceToken.length,
-    );
-    if (
-      options?.deleteOnHardFail !== false &&
-      (reason === "Unregistered" || reason === "Gone")
-    ) {
-      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-    }
-    return { ok: false, status: response.status, reason };
-  }
-
-  return { ok: true, status: response.status };
-}
-
 async function sendApns(
   deviceToken: string,
   payload: PushPayload,
   options?: { topic?: string | null; apsEnvironment?: string | null },
 ): Promise<ApnsSendResult> {
   if (!isApnsConfigured()) {
-    console.warn("[push] APNs env vars not configured — skipping send");
     return { ok: false, reason: "not_configured" };
   }
 
+  const topic = trimEnv(options?.topic) || bundleId();
+  const production = useProductionApns(options?.apsEnvironment);
+  const authority = hostFor(production);
   const body = JSON.stringify({
     aps: {
-      alert: {
-        title: payload.title,
-        body: payload.body,
-      },
+      alert: { title: payload.title, body: payload.body },
       sound: "default",
       badge: 1,
     },
     requestId: payload.requestId,
   });
 
-  const topic =
-    normalizeEnvString(options?.topic) ||
-    apnsBundleId();
-
-  // Prefer gateway from the phone’s signed aps-environment when known.
-  let preferredProduction = useProductionApns();
-  if (options?.apsEnvironment === "development") preferredProduction = false;
-  if (options?.apsEnvironment === "production") preferredProduction = true;
-
   try {
-    const first = await sendApnsOnce(deviceToken, body, preferredProduction, topic, {
-      deleteOnHardFail: false,
-    });
-    if (first.ok || !shouldRetryOppositeApnsEnvironment(first.reason)) {
-      if (
-        !first.ok &&
-        (first.reason === "BadDeviceToken" ||
-          first.reason === "Unregistered" ||
-          first.reason === "Gone")
-      ) {
-        await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
-      }
-      return first;
+    const response = await postOnce(
+      authority,
+      deviceToken,
+      {
+        authorization: `bearer ${makeJwt()}`,
+        "apns-topic": topic,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+        "content-type": "application/json",
+      },
+      body,
+    );
+
+    if (response.status >= 200 && response.status < 300) {
+      return { ok: true, status: response.status, host: authority };
     }
 
-    console.warn(
-      "[push]",
-      first.reason,
-      "on",
-      preferredProduction ? "production" : "sandbox",
+    const reason = parseReason(response.body, response.status);
+    console.error(
+      "[push] APNs",
+      response.status,
+      reason,
+      "host=",
+      authority,
       "topic=",
       topic,
-      "— retrying opposite gateway",
+      "tokenLen=",
+      deviceToken.length,
     );
-    const second = await sendApnsOnce(
-      deviceToken,
-      body,
-      !preferredProduction,
-      topic,
-      { deleteOnHardFail: false },
-    );
-    if (!second.ok) {
-      // Keep token for debugging — do not delete on environment mismatch.
-      return {
-        ...second,
-        reason: `${first.reason}@${preferredProduction ? "prod" : "sandbox"} then ${second.reason}@${!preferredProduction ? "prod" : "sandbox"} (topic=${topic}, tokenLen=${deviceToken.length}, token=${deviceToken.slice(0, 8)}…${deviceToken.slice(-8)})`,
-      };
+
+    if (
+      response.status === 410 ||
+      reason === "Unregistered" ||
+      reason === "Gone"
+    ) {
+      await prisma.devicePushToken.deleteMany({ where: { token: deviceToken } });
     }
-    return second;
+
+    return { ok: false, status: response.status, reason, host: authority };
   } catch (error) {
-    console.error("[push] APNs request failed", error);
-    const message = error instanceof Error ? error.message : "request failed";
+    console.error("[push] APNs connection failed", error);
     return {
       ok: false,
-      reason: message.includes("fetch failed")
-        ? "APNs HTTP/2 connection failed"
-        : message,
+      reason: error instanceof Error ? error.message : "request failed",
+      host: authority,
     };
   }
 }
@@ -359,34 +311,23 @@ export async function registerPushToken(input: {
   userId?: string | null;
   bundleId?: string | null;
   apsEnvironment?: string | null;
-  /** undefined = leave unchanged on update; null = clear */
   watchRequestId?: string | null;
 }) {
-  // APNs tokens are hex; length is not fixed forever (historically 64, sometimes longer).
   const token = input.token.trim().toLowerCase().replace(/[^0-9a-f]/g, "");
   if (token.length < 64 || token.length % 2 !== 0 || token.length > 256) {
     throw new Error(
-      `Push token length looks wrong (${token.length} chars). Expected even-length hex, 64–256 characters.`,
+      `Push token length looks wrong (${token.length} chars). Expected even-length hex, 64–256.`,
     );
   }
 
-  const bundleId = normalizeEnvString(input.bundleId) || null;
-  const apsEnvironment = normalizeEnvString(input.apsEnvironment) || null;
-  const expectedBundle = apnsBundleId();
-  if (bundleId && expectedBundle && bundleId !== expectedBundle) {
-    console.warn(
-      "[push] device bundleId",
-      bundleId,
-      "does not match APNS_BUNDLE_ID",
-      expectedBundle,
-    );
-  }
+  const deviceBundle = trimEnv(input.bundleId) || null;
+  const apsEnvironment = trimEnv(input.apsEnvironment) || null;
 
   return prisma.devicePushToken.upsert({
     where: { token },
     update: {
       platform: input.platform ?? "ios",
-      ...(bundleId ? { bundleId } : {}),
+      ...(deviceBundle ? { bundleId: deviceBundle } : {}),
       ...(apsEnvironment ? { apsEnvironment } : {}),
       ...(input.userId !== undefined ? { userId: input.userId } : {}),
       ...(input.watchRequestId !== undefined
@@ -396,7 +337,7 @@ export async function registerPushToken(input: {
     create: {
       token,
       platform: input.platform ?? "ios",
-      bundleId,
+      bundleId: deviceBundle,
       apsEnvironment,
       userId: input.userId ?? null,
       watchRequestId: input.watchRequestId ?? null,
@@ -440,14 +381,6 @@ export async function notifyOrderStatusChange(
   });
 
   if (tokens.length === 0) {
-    console.info(
-      "[push] no device tokens for",
-      requestId,
-      "userId=",
-      userId ?? "none",
-      "configured=",
-      isApnsConfigured(),
-    );
     return {
       sent: 0,
       attempted: 0,
@@ -456,23 +389,12 @@ export async function notifyOrderStatusChange(
     };
   }
 
-  console.info(
-    "[push] sending to",
-    tokens.length,
-    "device(s)",
-    "production=",
-    useProductionApns(),
-    "bundle=",
-    apnsBundleId(),
-    "requestId=",
-    requestId,
-  );
-
   const results: ApnsSendResult[] = [];
   let sent = 0;
   for (const row of tokens) {
+    // Sequential + fresh connection each time (never parallel on one session).
     const result = await sendApns(row.token, payload, {
-      topic: row.bundleId ?? apnsBundleId(),
+      topic: row.bundleId || bundleId(),
       apsEnvironment: row.apsEnvironment,
     });
     results.push(result);
@@ -483,7 +405,6 @@ export async function notifyOrderStatusChange(
 }
 
 export async function sendTestPushToAllDevices() {
-  // Newest token first — avoids an old Xcode/simulator token masking TestFlight failures.
   const tokens = await prisma.devicePushToken.findMany({
     take: 20,
     orderBy: { updatedAt: "desc" },
@@ -492,6 +413,7 @@ export async function sendTestPushToAllDevices() {
     title: "Test notification",
     body: "Dr. Ken Studio push is working.",
   };
+
   const results: Array<
     ApnsSendResult & {
       tokenPrefix: string;
@@ -501,10 +423,10 @@ export async function sendTestPushToAllDevices() {
     }
   > = [];
   let sent = 0;
+
   for (const row of tokens) {
-    const topic = row.bundleId || apnsBundleId();
     const result = await sendApns(row.token, payload, {
-      topic,
+      topic: row.bundleId || bundleId(),
       apsEnvironment: row.apsEnvironment,
     });
     results.push({
@@ -516,10 +438,11 @@ export async function sendTestPushToAllDevices() {
     });
     if (result.ok) sent += 1;
   }
+
   return {
     sent,
     attempted: tokens.length,
-    bundleId: apnsBundleId() || null,
+    bundleId: bundleId() || null,
     production: useProductionApns(),
     results,
   };
@@ -529,11 +452,11 @@ export function getPushConfigStatus() {
   return {
     configured: isApnsConfigured(),
     production: useProductionApns(),
-    bundleId: apnsBundleId() || null,
-    keyIdConfigured: Boolean(normalizeEnvString(process.env.APNS_KEY_ID)),
-    teamIdConfigured: Boolean(normalizeEnvString(process.env.APNS_TEAM_ID)),
+    bundleId: bundleId() || null,
+    keyIdConfigured: Boolean(trimEnv(process.env.APNS_KEY_ID)),
+    teamIdConfigured: Boolean(trimEnv(process.env.APNS_TEAM_ID)),
     privateKeyConfigured: Boolean(process.env.APNS_PRIVATE_KEY),
     expectedBundleNote:
-      "APNS_BUNDLE_ID must exactly match the iOS app Bundle Identifier in Xcode (Signing & Capabilities).",
+      "APNS_BUNDLE_ID must match the iOS app Bundle Identifier exactly.",
   };
 }
