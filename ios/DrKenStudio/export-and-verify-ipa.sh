@@ -65,7 +65,7 @@ if [[ $STATUS -eq 0 ]]; then
 else
   echo "FAILED — exported IPA is still development."
   echo "On developer.apple.com create an App Store provisioning profile for"
-  echo "com.drkenstudio.drkenstudio with Push enabled, then in Xcode:"
+  echo "com.drkenstudio.orders with Push enabled, then in Xcode:"
   echo "  Signing & Capabilities → Release → Manual → select that App Store profile"
   echo "Archive again and re-run this script."
 fi

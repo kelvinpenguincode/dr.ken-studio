@@ -5,7 +5,7 @@
 #     --key-id YOUR_KEY_ID \
 #     --team-id YOUR_TEAM_ID \
 #     --p8 /path/to/AuthKey_XXX.p8 \
-#     --bundle com.drkenstudio.drkenstudio \
+#     --bundle com.drkenstudio.orders \
 #     --token PASTE_FULL_HEX_TOKEN_FROM_PHONE
 #
 # Requires: openssl, python3, curl with HTTP/2
@@ -15,7 +15,7 @@ set -euo pipefail
 KEY_ID=""
 TEAM_ID=""
 P8=""
-BUNDLE="com.drkenstudio.drkenstudio"
+BUNDLE="com.drkenstudio.orders"
 TOKEN=""
 
 while [[ $# -gt 0 ]]; do

@@ -14,7 +14,7 @@ settings:
     # Use the explicit Info.plist only — do not also auto-generate one
     # (avoids "Multiple commands produce Info.plist")
     GENERATE_INFOPLIST_FILE: NO
-    PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.drkenstudio
+    PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
 targets:
   DrKenStudio:
     type: application
@@ -26,7 +26,7 @@ targets:
           - "Info.plist"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.drkenstudio
+        PRODUCT_BUNDLE_IDENTIFIER: com.drkenstudio.orders
         INFOPLIST_FILE: DrKenStudio/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Dr. Ken Studio
     info:
