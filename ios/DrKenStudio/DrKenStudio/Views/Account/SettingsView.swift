@@ -39,8 +39,9 @@ struct SettingsView: View {
                     Text("CODESIGN says DEVELOPMENT — Apple will only mint sandbox tokens. Reinstalling won’t help. On Mac: export App Store IPA → bash verify-push-entitlements.sh Your.ipa → must say production → upload THAT IPA only.")
                         .font(.footnote)
                         .foregroundStyle(.red)
-                } else if PushBuildDiagnostics.apsEnvironment.contains("unknown") {
-                    Text("Could not read codesign aps-environment. On Mac verify the IPA before another upload.")
+                } else if PushBuildDiagnostics.apsEnvironment.contains("unknown")
+                            || PushBuildDiagnostics.apsEnvironment.contains("unreadable") {
+                    Text("On-device codesign can’t be read (common on TestFlight). Trust only Mac verify-push-entitlements.sh on the IPA — not this label alone.")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 } else if PushBuildDiagnostics.apsEnvironment == "production",

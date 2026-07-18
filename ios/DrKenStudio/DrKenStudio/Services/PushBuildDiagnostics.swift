@@ -3,16 +3,11 @@ import MachO
 
 /// Push-environment diagnostics for the installed build.
 enum PushBuildDiagnostics {
-    /// Prefer the **codesigned** `aps-environment` inside this binary (truth on device).
+    /// Codesign / profile only. Info.plist is NOT trusted (Release builds always
+    /// stamp “production” there even when Mach-O can’t be read under FairPlay).
     static var apsEnvironment: String {
         if let signed = apsEnvironmentFromMachO() {
             return signed
-        }
-        if let fromInfo = Bundle.main.object(forInfoDictionaryKey: "DKPushAPSEnvironment") as? String,
-           !fromInfo.isEmpty,
-           !fromInfo.contains("$(")
-        {
-            return fromInfo
         }
         if let fromProfile = apsEnvironmentFromMobileProvision() {
             return fromProfile
@@ -20,6 +15,9 @@ enum PushBuildDiagnostics {
         #if DEBUG
         return "development"
         #else
+        if isTestFlightInstall {
+            return "testflight-unreadable"
+        }
         return "release-build-unknown"
         #endif
     }

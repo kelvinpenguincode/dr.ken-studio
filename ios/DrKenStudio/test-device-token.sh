@@ -19,6 +19,7 @@ P8=""
 BUNDLE="com.drkenstudio.orders"
 TOKEN=""
 ALSO_SANDBOX=0
+SANDBOX_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --bundle) BUNDLE="$2"; shift 2 ;;
     --token) TOKEN="$2"; shift 2 ;;
     --sandbox) ALSO_SANDBOX=1; shift ;;
+    --sandbox-only) SANDBOX_ONLY=1; shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -111,14 +113,19 @@ send() {
   echo ""
 }
 
-# Production only by default (TestFlight). Optional second host on a NEW connection.
-send "api.push.apple.com" "PRODUCTION"
-if [[ "$ALSO_SANDBOX" -eq 1 ]]; then
+# Fresh curl per host. Default = production only.
+if [[ "$SANDBOX_ONLY" -eq 1 ]]; then
+  send "api.sandbox.push.apple.com" "SANDBOX ONLY"
+elif [[ "$ALSO_SANDBOX" -eq 1 ]]; then
+  send "api.push.apple.com" "PRODUCTION"
   send "api.sandbox.push.apple.com" "SANDBOX"
+else
+  send "api.push.apple.com" "PRODUCTION"
 fi
 
 echo "Interpretation:"
 echo "  production HTTP 200 → TestFlight/App Store token OK"
-echo "  BadEnvironmentKeyInToken → Apple classifies this token as sandbox"
+echo "  sandbox HTTP 200    → development/sandbox token (send via sandbox gateway)"
+echo "  BadEnvironmentKeyInToken on production → Apple classifies token as sandbox"
 echo "  BadDeviceToken → bad token / topic / key mismatch"
-echo "  Use --sandbox only if debugging a Xcode debug build"
+echo "  Flags: --sandbox (both), --sandbox-only (sandbox alone, new process)"

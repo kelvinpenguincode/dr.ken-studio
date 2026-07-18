@@ -234,27 +234,12 @@ function parseReason(body: string, status: number): string {
   }
 }
 
-async function sendApns(
+async function sendToHost(
+  authority: string,
   deviceToken: string,
-  payload: PushPayload,
-  options?: { topic?: string | null; apsEnvironment?: string | null },
+  topic: string,
+  body: string,
 ): Promise<ApnsSendResult> {
-  if (!isApnsConfigured()) {
-    return { ok: false, reason: "not_configured" };
-  }
-
-  const topic = trimEnv(options?.topic) || bundleId();
-  const production = useProductionApns(options?.apsEnvironment);
-  const authority = hostFor(production);
-  const body = JSON.stringify({
-    aps: {
-      alert: { title: payload.title, body: payload.body },
-      sound: "default",
-      badge: 1,
-    },
-    requestId: payload.requestId,
-  });
-
   try {
     const response = await postOnce(
       authority,
@@ -303,6 +288,63 @@ async function sendApns(
       host: authority,
     };
   }
+}
+
+async function sendApns(
+  deviceToken: string,
+  payload: PushPayload,
+  options?: { topic?: string | null; apsEnvironment?: string | null },
+): Promise<ApnsSendResult> {
+  if (!isApnsConfigured()) {
+    return { ok: false, reason: "not_configured" };
+  }
+
+  const topic = trimEnv(options?.topic) || bundleId();
+  const preferProduction = useProductionApns(options?.apsEnvironment);
+  const body = JSON.stringify({
+    aps: {
+      alert: { title: payload.title, body: payload.body },
+      sound: "default",
+      badge: 1,
+    },
+    requestId: payload.requestId,
+  });
+
+  const primary = hostFor(preferProduction);
+  const first = await sendToHost(primary, deviceToken, topic, body);
+  if (first.ok) return first;
+
+  // Phone UI can claim “production” while Apple still issued a sandbox token
+  // (Info.plist lie / FairPlay). Retry the other host on a brand-new connection only.
+  if (
+    first.reason === "BadEnvironmentKeyInToken" ||
+    first.reason === "BadDeviceToken"
+  ) {
+    const secondary = hostFor(!preferProduction);
+    console.warn(
+      "[push]",
+      first.reason,
+      "on",
+      primary,
+      "— new connection to",
+      secondary,
+    );
+    const second = await sendToHost(secondary, deviceToken, topic, body);
+    if (second.ok) {
+      return {
+        ...second,
+        reason: `delivered via ${secondary} after ${first.reason} on ${primary}`,
+      };
+    }
+    return {
+      ok: false,
+      status: second.status ?? first.status,
+      host: second.host,
+      reason: `${first.reason} @ ${primary} then ${second.reason} @ ${secondary}`,
+    };
+  }
+
+  return first;
 }
 
 export async function registerPushToken(input: {
