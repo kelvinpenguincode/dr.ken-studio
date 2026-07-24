@@ -167,7 +167,7 @@ struct MyOrdersView: View {
                     Spacer()
                     StatusChip(status: order.status)
                 }
-                OrderStatusTracker(status: order.status)
+                OrderStatusTracker(status: order.status, compact: true)
             }
             .padding(.vertical, 4)
         }
